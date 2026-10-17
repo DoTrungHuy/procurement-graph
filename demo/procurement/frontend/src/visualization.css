@@ -1,0 +1,51 @@
+/* Layout only: reuse the existing theme, controls and chart colors. */
+.visualization-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  min-width: 0;
+}
+.visualization-grid > * { min-width: 0; }
+.overview-visuals { margin-bottom: 32px; }
+.visualization-grid > .network-surface { margin-top: 0; padding-top: 0; border-top: 0; }
+.visualization-grid .network-canvas { height: 320px; }
+.visualization-grid .network-surface .section-heading { gap: 14px; }
+.visualization-grid .network-surface .section-heading > div { min-width: 0; }
+.visualization-grid .network-surface .chart-select { gap: 8px; }
+.visualization-grid .network-surface .chart-select select { width: 64px; }
+.visualization-grid .network-legend { flex-wrap: wrap; gap: 12px 18px; }
+.visualization-grid .network-note { display: flex; align-items: baseline; gap: 12px; }
+.visualization-grid .network-note > .text-button { flex-shrink: 0; }
+.recent-project-list { list-style: none; margin: 0; padding: 0 8px 0 0; max-height: 370px; overflow-y: auto; }
+.recent-project-list > li { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.recent-project-list > li:first-child { padding-top: 0; }
+.recent-project-list > li:last-child { border-bottom: 0; }
+.recent-project-link { display: block; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+.recent-project-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
+.relations-view .page-heading { margin-bottom: 18px; }
+.relations-view .query-body { padding: 18px 0; }
+.scenario-results, .scenario-details { min-width: 0; }
+.scenario-chart .empty-state { min-height: 320px; }
+.scenario-chart .chart-section { padding-bottom: 0; }
+.scenario-chart .chart-toolbar { margin: 0 0 18px; flex-wrap: wrap; }
+.scenario-chart .bar-chart { max-height: 320px; overflow-y: auto; padding-right: 8px; }
+.scenario-chart .bar-row { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; }
+.scenario-chart .bar-label { grid-column: 1 / -1; }
+.scenario-chart .bar-track { grid-column: 1; grid-row: 2; }
+.scenario-chart .bar-number { grid-column: 2; grid-row: 2; }
+.scenario-details { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
+@media (min-width: 1200px) {
+  .visualization-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-visuals { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+  .relations-view .query-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); grid-template-rows: min-content 1fr; align-items: start; gap: 8px 28px; }
+  .relations-view .query-body > h2, .relations-view .query-body > p { grid-column: 1; align-self: start; margin-top: 0; }
+  .relations-view .query-form { grid-column: 2; grid-row: 1 / 3; margin-top: 0; align-self: center; min-width: 0; }
+  .relations-view .query-entity { min-width: 0; }
+}
+@media (max-width: 640px) {
+  .visualization-grid { gap: 24px; }
+  .visualization-grid .network-canvas { height: 300px; }
+  .visualization-grid .network-surface .section-heading { flex-wrap: wrap; }
+  .scenario-chart .empty-state { min-height: 120px; padding: 18px 0; }
+}

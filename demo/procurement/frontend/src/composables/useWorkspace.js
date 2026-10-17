@@ -24,7 +24,7 @@ export function createWorkspace() {
     projectSort: ['announcement_date', 'imported_at'].includes(initialProjectSort) ? initialProjectSort : 'announcement_date',
     items: [], itemTotal: 0, itemPage: 1, itemPageSize: 20, itemSearch: '', filters: emptyFilters(), itemApplied: {}, itemLoading: false, itemError: '',
     scenario: scenarios[0].id, purchaser: '', supplier: '', selectedSuppliers: [], result: null,
-    resultLoading: false, resultError: '', renderMs: null, resultParameters: null, networkOpen: false,
+    resultLoading: false, resultError: '', renderMs: null, resultParameters: null,
     evidence: null, projectPanelOpen: false, projectDetail: null, projectDetailLoading: false, projectDetailError: '', projectDetailTab: 'items',
     importMethod: 'upload', processingMode: 'parse-only', files: [], localLimit: 5, ingesting: false,
     job: null, jobHistory: [], jobDocuments: [], jobDocumentTotal: 0, jobDocumentPage: 1, jobProgressError: ''
@@ -53,7 +53,7 @@ export function createWorkspace() {
     w.projectPage = 1; w.projectSearch = ''; w.projectPurchaser = ''; w.itemPage = 1; w.itemSearch = ''
     w.filters = emptyFilters(); w.itemApplied = {}; w.result = null; w.resultError = ''; w.renderMs = null
     w.selectedSuppliers = []; w.purchaser = ''; w.supplier = ''; w.evidence = null
-    w.projectPanelOpen = false; w.projectDetail = null; w.networkOpen = false
+    w.projectPanelOpen = false; w.projectDetail = null
     w.job = null; w.jobHistory = []; w.jobDocuments = []; w.jobDocumentTotal = 0; w.jobDocumentPage = 1
     w.ingesting = false; w.error = ''; w.itemError = ''; w.projectError = ''; w.resultLoading = false
     w.itemLoading = false; w.projectLoading = false; w.projectDetailLoading = false; w.projectDetailError = ''; w.jobProgressError = ''

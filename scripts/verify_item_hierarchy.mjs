@@ -25,7 +25,7 @@ async function openProject(name) {
   await page.getByRole('searchbox', { name: '搜索项目', exact: true }).fill(name)
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await page.getByText('1–1 / 1 条', { exact: true }).waitFor()
-  await page.getByRole('button', { name, exact: true }).click()
+  await page.locator('.project-table').getByRole('button', { name, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '采购包详情', exact: true })
   await dialog.getByRole('button', { name: '层级核验', exact: true }).click()
   return dialog

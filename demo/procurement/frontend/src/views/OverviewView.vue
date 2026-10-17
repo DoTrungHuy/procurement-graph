@@ -1,10 +1,27 @@
 <script setup>
+import { defineAsyncComponent, ref, watch } from 'vue'
+import { api } from '../api'
 import { useWorkspace } from '../composables/useWorkspace'
 import { lotLabel, money, number, statusName, statusTone } from '../utils/presentation'
 import AppIcon from '../components/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+const RelationNetwork = defineAsyncComponent(() => import('../components/RelationNetwork.vue'))
 const w = useWorkspace()
+const recentProjects = ref([]), recentLoading = ref(true), recentError = ref('')
+const recentVersion = ref(0)
+function refreshRecent() { recentVersion.value++ }
+watch(() => [w.dataset, w.datasetLoading, recentVersion.value], async ([dataset, loading], previous, onCleanup) => {
+  let active = true
+  onCleanup(() => { active = false })
+  recentProjects.value = []; recentError.value = ''; recentLoading.value = true
+  if (loading) return
+  try {
+    const response = await api.projects({ dataset_id: dataset, sort: 'announcement_date', page: 1, page_size: 5 })
+    if (active) recentProjects.value = response.data
+  } catch (error) { if (active) recentError.value = error.message }
+  finally { if (active) recentLoading.value = false }
+}, { immediate: true })
 function page(value) { w.projectPage = value; w.loadProjects(false) }
 </script>
 
@@ -17,6 +34,20 @@ function page(value) { w.projectPage = value; w.loadProjects(false) }
       <div><span>标的明细</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.items) }}</strong></div>
       <div><span>投标主体</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.suppliers) }}</strong></div>
       <div class="stat-amount"><span>已披露中标金额</span><strong>{{ w.datasetLoading ? '—' : money(w.stats.total_amount) }}</strong><small v-if="w.stats.unknown_amount_count">另有 {{ w.stats.unknown_amount_count }} 个采购包金额未披露</small></div>
+    </div>
+    <div class="visualization-grid overview-visuals" aria-label="采购关系与近期项目">
+      <RelationNetwork title="采购关系网络"></RelationNetwork>
+      <section class="surface recent-projects" aria-labelledby="recent-projects-title" :aria-busy="recentLoading">
+        <div class="section-heading"><div><h2 id="recent-projects-title">近期项目</h2><p>当前数据集，按公告日期展示最新5个采购包。</p></div></div>
+        <div v-if="recentError" class="notice danger" role="alert">{{ recentError }}<button class="text-button" @click="refreshRecent">重新加载近期项目</button></div>
+        <EmptyState v-else-if="recentLoading || !recentProjects.length" :busy="recentLoading" :title="recentLoading ? '正在读取近期项目' : '暂无近期项目'" description="完整项目列表及查询条件保留在下方。"></EmptyState>
+        <ul v-else class="recent-project-list">
+          <li v-for="project in recentProjects" :key="project.id">
+            <div><button class="text-button recent-project-link" :title="[project.name, project.lot_name].filter(Boolean).join(' · ')" @click="w.openProject(project.id)">{{ project.name }}</button><span class="cell-note">{{ project.purchaser || '采购单位未披露' }} · {{ lotLabel(project.lot_name) }}</span></div>
+            <div class="recent-project-meta"><span class="date-cell">{{ project.announcement_date || '日期未披露' }}</span><span class="numeric">{{ money(project.awarded_amount) }}</span></div>
+          </li>
+        </ul>
+      </section>
     </div>
     <section class="surface" aria-labelledby="projects-title">
       <div class="section-heading"><h2 id="projects-title">采购项目 <span class="count">{{ w.projectTotal }}</span></h2><button class="text-button" :disabled="w.datasetLoading" @click="w.loadDataset()">刷新数据</button></div>

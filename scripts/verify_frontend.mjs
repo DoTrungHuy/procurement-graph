@@ -19,7 +19,8 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function ready(url) { for (let i = 0; i < 100; ++i) { try { if ((await fetch(url)).ok) return } catch {} await pause(200) } throw new Error('Local service did not start: ' + url) }
 const json = async suffix => { const response = await fetch(apiOrigin + '/api/' + suffix); if (!response.ok) throw new Error(`API ${response.status}: ${suffix}`); return response.json() }
 let browser, context, page
-async function check(name, action) { await action(); report.checks.push({ name, passed: true }); console.log(JSON.stringify({ check: name, passed: true })) }
+let activeCheck = 'initialization'
+async function check(name, action) { activeCheck = name; await action(); report.checks.push({ name, passed: true }); console.log(JSON.stringify({ check: name, passed: true })) }
 async function navigate(view, title) { await page.locator(`.primary-nav a[href="#/${view}"]`).click(); await page.getByRole('heading', { name: title, exact: true, level: 1 }).waitFor(); await page.evaluate(() => window.scrollTo(0, 0)) }
 async function screenshot(name, options = {}) {
   await page.waitForFunction(() => !document.querySelector('.table-scroll[aria-busy=true]') && !document.querySelector('.export-button')?.disabled)
@@ -28,6 +29,27 @@ async function screenshot(name, options = {}) {
   const file = name + '.png'; await page.screenshot({ path: path.join(output, file), animations: 'disabled', ...options }); report.screenshots.push(file)
 }
 async function noOverflow(label) { const values = await page.evaluate(() => ({ width: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth })); assert(values.document <= values.width + 1 && values.body <= values.width + 1, `${label}: ${JSON.stringify(values)}`) }
+async function inspectGraph() {
+  return page.locator('.network-canvas').evaluate(async element => {
+    const resource = performance.getEntriesByType('resource').find(entry => /\/src\/graph\.js|\/assets\/graph-/.test(entry.name))
+    const module = await import(resource.name), engine = Object.values(module).find(value => typeof value?.getInstanceByDom === 'function')
+    const chart = engine.getInstanceByDom(element), series = chart.getModel().getSeriesByIndex(0), data = series.getData(), points = []
+    data.each(index => {
+      const raw = data.getRawDataItem(index), point = chart.convertToPixel({ seriesIndex: 0 }, data.getItemLayout(index)), symbol = data.getItemGraphicEl(index)
+      let target = chart.getZr().handler.findHover(point[0], point[1]).target
+      while (target && target !== symbol) target = target.parent
+      points.push({ id: raw.id, type: raw.type, x: point[0], y: point[1], clickable: !!target })
+    })
+    return { width: chart.getWidth(), height: chart.getHeight(), zoom: series.get('zoom'), points }
+  })
+}
+async function graphFits() {
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const graph = await inspectGraph()
+  assert(graph.points.length > 0)
+  assert(graph.points.every(point => point.x >= 12 && point.x <= graph.width - 12 && point.y >= 12 && point.y <= graph.height - 12), 'Graph nodes must fit inside the canvas')
+  return graph
+}
 async function download(button, name) { const pending = page.waitForEvent('download'); await button.click(); const file = await pending; assert.equal(await file.failure(), null); if (name.endsWith('.xlsx')) assert.equal(file.suggestedFilename(), name); await file.saveAs(path.join(runtime, name)); const bytes = (await fs.stat(path.join(runtime, name))).size; assert(bytes > 100); report.downloads.push({ name, bytes }); return path.join(runtime, name) }
 async function waitNewJob(action, expected) {
   const response = page.waitForResponse(r => r.request().method() === 'POST' && (r.url().includes('/api/ingest') || r.url().includes('/api/samples/replay') || r.url().includes('/retry')))
@@ -45,20 +67,47 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) })
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1, acceptDownloads: true })
   await context.route('**/*', route => { const address = new URL(route.request().url()); if (!['localhost', '127.0.0.1'].includes(address.hostname)) { report.externalRequests.push(address.origin); return route.abort() } return route.continue() })
-  page = await context.newPage(); page.on('pageerror', error => report.consoleErrors.push(error.message))
+  page = await context.newPage(); page.on('pageerror', error => {
+    report.consoleErrors.push(error.message)
+    const detail = { check: activeCheck, url: page.url(), stack: error.stack }
+    ;(report.consoleErrorDetails ||= []).push(detail); console.error(JSON.stringify(detail))
+  })
   await page.goto(uiOrigin); await page.getByRole('heading', { name: '采购项目 26', exact: true }).waitFor()
-  await check('overview: 20 source notices, 26 packages, 138 items; no initial graph download', async () => {
+  await check('overview: default relationship graph, latest projects and complete paginated project table', async () => {
     assert.match(await page.locator('.stat-strip').innerText(), /20/); assert.equal(await page.locator('.project-table tbody tr').count(), 10)
-    assert(!await page.evaluate(() => performance.getEntriesByType('resource').some(r => /\/src\/graph\.js|echarts/.test(r.name))))
+    await page.locator('.network-canvas canvas').waitFor(); assert.match(await page.getByTestId('network-summary').innerText(), /个主体/)
+    await graphFits()
+    await page.locator('.recent-project-link').first().waitFor(); assert.equal(await page.locator('.recent-project-link').count(), 5)
+    const recent = await json('projects?dataset_id=official-reference&sort=announcement_date&page=1&page_size=5')
+    assert.deepEqual(await page.locator('.recent-project-link').allTextContents(), recent.data.map(project => project.name))
+    const graphBox = await page.locator('.network-canvas').boundingBox(), recentBox = await page.locator('.recent-projects').boundingBox()
+    assert(graphBox.y < 1000 && recentBox.x > graphBox.x + graphBox.width)
+    await page.locator('.recent-project-link').first().click(); await page.getByRole('dialog', { name: '采购包详情', exact: true }).locator('.detail-title').waitFor(); await page.keyboard.press('Escape')
     await noOverflow('desktop overview'); await screenshot('overview-desktop')
+  })
+  await check('fit control tolerates temporarily unavailable graph coordinates', async () => {
+    await page.locator('.network-canvas').evaluate(async element => {
+      const resource = performance.getEntriesByType('resource').find(entry => /\/src\/graph\.js|\/assets\/graph-/.test(entry.name))
+      const module = await import(resource.name), engine = Object.values(module).find(value => typeof value?.getInstanceByDom === 'function'), chart = engine.getInstanceByDom(element)
+      const convert = chart.convertToPixel
+      chart.convertToPixel = () => null
+      element.restoreGraphCoordinates = () => { chart.convertToPixel = convert; delete element.restoreGraphCoordinates }
+    })
+    try {
+      await page.getByRole('button', { name: '关系网络适应视图', exact: true }).click(); assert.deepEqual(report.consoleErrors, []); assert(await page.locator('.network-canvas canvas').isVisible())
+    } finally { await page.locator('.network-canvas').evaluate(element => element.restoreGraphCoordinates()) }
+    await page.getByRole('button', { name: '关系网络适应视图', exact: true }).click(); await graphFits()
   })
   await check('empty dataset has a usable import entry', async () => {
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official'); await page.getByRole('heading', { name: '这个数据集还没有项目', exact: true }).waitFor(); assert(await page.getByRole('button', { name: '前往数据接入', exact: true }).isVisible())
+    await page.getByRole('heading', { name: '暂无可展示的关系', exact: true }).waitFor(); await page.getByRole('heading', { name: '暂无近期项目', exact: true }).waitFor()
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference'); await page.getByRole('heading', { name: '采购项目 26', exact: true }).waitFor()
   })
   await check('project search, pagination and source evidence drawer', async () => {
     const first = await page.locator('.project-link').first().innerText()
     await page.getByRole('button', { name: '项目下一页', exact: true }).click(); await page.getByText('11–20 / 26 条', { exact: true }).waitFor(); await page.locator('.table-scroll[aria-busy="false"]').waitFor(); assert.notEqual(await page.locator('.project-link').first().innerText(), first)
+    const recent = await json('projects?dataset_id=official-reference&sort=announcement_date&page=1&page_size=5')
+    assert.deepEqual(await page.locator('.recent-project-link').allTextContents(), recent.data.map(project => project.name))
     await page.getByRole('searchbox', { name: '搜索项目', exact: true }).fill('肇庆学院'); await page.getByRole('button', { name: '查询', exact: true }).click(); await page.getByText('1–1 / 1 条', { exact: true }).waitFor()
     await page.locator('.project-link').first().click(); const project = page.getByRole('dialog', { name: '采购包详情', exact: true }); await project.locator('.detail-title').waitFor()
     assert.match(await project.locator('.detail-fields').innerText(), /广东南方通信建设有限公司/)
@@ -105,9 +154,13 @@ try {
     await page.locator(`[data-scenario-tab="${scenario}"]`).click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.getByRole('button', { name: '查询关系', exact: true }).click()
     const result = page.locator(`[data-testid="scenario-result"][data-scenario="${scenario}"]`); await result.waitFor(); await page.waitForFunction(() => document.querySelector('[data-testid=scenario-result]')?.getAttribute('data-render-ms') != null)
     assert(await result.locator('tbody tr').count() > 0); assert(Number(await result.getAttribute('data-render-ms')) < 10000)
-    await result.getByRole('button', { name: '图表', exact: true }).click(); assert(await result.locator('.bar-row').count() > 0)
+    assert(await result.locator('.bar-chart').isVisible()); assert(await result.locator('.relation-table').isVisible()); assert(await result.locator('.bar-row').count() > 0)
+    await result.locator('.network-canvas canvas').waitFor()
+    const chartBox = await result.locator('.scenario-chart').boundingBox(), graphBox = await result.locator('.network-surface').boundingBox(), detailsBox = await result.locator('.scenario-details').boundingBox()
+    assert(graphBox.x >= chartBox.x + chartBox.width && Math.abs(graphBox.y - chartBox.y) < 2)
+    assert(detailsBox.width > chartBox.width + graphBox.width && detailsBox.y >= Math.max(chartBox.y + chartBox.height, graphBox.y + graphBox.height))
     if (scenario !== 'purchaser-bidders') { await result.getByRole('combobox', { name: '图表比较指标', exact: true }).selectOption('amount'); assert((await result.locator('.bar-number').first().innerText()).length > 0) }
-    await result.getByRole('button', { name: '表格', exact: true }).click()
+    assert(await result.locator('.relation-table').isVisible())
     if (scenario === 'purchaser-partners') { await screenshot('relations-desktop'); await result.getByRole('button', { name: '产品品牌', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'purchaser-bidders') { await result.getByRole('button', { name: '共同投标组合', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'supplier-competitors') { await result.getByRole('button', { name: '全部参与方', exact: true }).click(); const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' }); const expected = await json('analytics/supplier-competitors?' + params); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length)); report.allParticipants = expected.all_participants.length; if (expected.all_participants.length > 15) { await result.getByRole('button', { name: '关系结果下一页', exact: true }).click(); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length - 15)) } }
@@ -118,9 +171,31 @@ try {
     await page.getByRole('button', { name: '移除中国移动通信集团广东有限公司', exact: true }).click(); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isDisabled()); assert.equal(await page.locator('[data-testid=scenario-result]').count(), 0)
     await page.locator('.select-trigger').click(); await page.getByRole('searchbox', { name: '搜索供应商', exact: true }).fill('中国移动'); const checkbox = page.getByRole('checkbox', { name: '中国移动通信集团广东有限公司', exact: true }); await checkbox.check(); await page.keyboard.press('Escape'); assert.equal(await page.locator('.picker-popover').count(), 0); assert.equal(await page.locator('.select-trigger').getAttribute('aria-expanded'), 'false'); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isEnabled())
   })
-  await check('optional graph loads, resizes and closes without page errors', async () => {
-    await page.getByRole('button', { name: '查看关系网络', exact: true }).click(); await page.locator('.network-canvas canvas').waitFor(); assert.match(await page.getByTestId('network-summary').innerText(), /个主体/)
-    await page.getByRole('combobox', { name: '关系网络采购包数', exact: true }).selectOption('16'); await page.locator('.network-canvas canvas').waitFor(); await screenshot('network-desktop', { fullPage: true }); await page.getByRole('button', { name: '收起关系网络', exact: true }).click(); assert.equal(await page.locator('.network-canvas').count(), 0)
+  await check('default graph retains its scope and package limit while charts and results update', async () => {
+    await page.locator('.network-canvas canvas').waitFor(); assert.match(await page.getByTestId('network-summary').innerText(), /个主体/)
+    await page.getByRole('combobox', { name: '关系网络采购包数', exact: true }).selectOption('16'); await page.locator('.network-surface[aria-busy="false"] .network-canvas canvas').waitFor()
+    const expected = await json('graph?dataset_id=official-reference&limit=16')
+    assert.equal(await page.getByTestId('network-summary').innerText(), `${expected.nodes.length} 个主体 · ${expected.links.length} 条关系`)
+    await page.getByRole('button', { name: '查询关系', exact: true }).click(); await page.locator('[data-testid=scenario-result] .bar-row').first().waitFor()
+    assert.equal(await page.getByRole('combobox', { name: '关系网络采购包数', exact: true }).inputValue(), '16')
+    for (const [width, height] of [[1366, 768], [1440, 900]]) {
+      await page.setViewportSize({ width, height }); await page.evaluate(() => window.scrollTo(0, 0))
+      const chart = await page.locator('.scenario-chart').boundingBox(), graph = await page.locator('.network-canvas').boundingBox()
+      assert(chart.y < height && graph.y < height && graph.x > chart.x + chart.width); await noOverflow(`visible visuals ${width}`)
+      await graphFits()
+      await screenshot(`relations-${width}`)
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 }); await screenshot('network-desktop', { fullPage: true })
+  })
+  await check('graph wheel zoom, fit control and clicking a package preserve project details', async () => {
+    await page.locator('.network-canvas').scrollIntoViewIfNeeded(); const before = await graphFits(), box = await page.locator('.network-canvas').boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, -200)
+    await page.waitForTimeout(150); assert((await inspectGraph()).zoom > before.zoom)
+    await page.getByRole('button', { name: '关系网络适应视图', exact: true }).click(); const graph = await graphFits(), node = graph.points.find(point => point.type === 'project' && point.clickable)
+    assert(node, 'At least one visible package node must accept pointer input')
+    await page.locator('.network-canvas').scrollIntoViewIfNeeded(); const target = await page.locator('.network-canvas').boundingBox()
+    await page.mouse.click(target.x + node.x, target.y + node.y)
+    const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('.detail-title').waitFor(); assert(await panel.isVisible()); await page.keyboard.press('Escape')
   })
   await check('standard workbook and quality downloads', async () => {
     await download(page.getByRole('button', { name: '导出三表', exact: false }), 'procurement-tables.xlsx'); await download(page.getByRole('button', { name: '处理说明', exact: true }), 'quality-report.json')
