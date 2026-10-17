@@ -25,7 +25,7 @@ async function openProject(name) {
   await page.getByRole('searchbox', { name: '搜索项目', exact: true }).fill(name)
   await page.getByRole('button', { name: '查询', exact: true }).click()
   await page.getByText('1–1 / 1 条', { exact: true }).waitFor()
-  await page.getByRole('button', { name, exact: true }).click()
+  await page.locator('.project-table').getByRole('button', { name, exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '采购包详情', exact: true })
   await dialog.getByRole('button', { name: '层级核验', exact: true }).click()
   return dialog
@@ -68,7 +68,7 @@ for status in ['confirmed','pending']:
   await check('detail evidence opens the program-grounded source row', async () => {
     await page.getByRole('button', { name: '查看明细原文', exact: true }).first().click()
     const evidence = page.getByRole('dialog', { name: '标的来源', exact: true })
-    await evidence.getByRole('heading', { name: '程序定位的原文行', exact: true }).waitFor()
+    await evidence.getByRole('heading', { name: /^程序定位的原文行/ }).waitFor()
     assert.match(await evidence.locator('.grounded-quote').innerText(), /1-1-1.*台式电脑.*总价60元/)
     await page.keyboard.press('Escape'); await evidence.waitFor({ state: 'hidden' })
   })

@@ -52,6 +52,26 @@ try {
     assert(!await page.evaluate(() => performance.getEntriesByType('resource').some(r => /\/src\/graph\.js|echarts/.test(r.name))))
     await noOverflow('desktop overview'); await screenshot('overview-desktop')
   })
+  await check('overview relationship preview uses real packages and supports keyboard navigation', async () => {
+    await page.locator('.map-node.project').first().waitFor()
+    assert.equal(await page.getByRole('heading', { name: '近期项目', exact: true }).count(), 1)
+    assert.equal(await page.getByText('DATA HEALTH', { exact: true }).count(), 0)
+    const [statsBox, workflowBox, graphBox] = await Promise.all(['.stat-strip', '.workflow-strip', '.overview-grid'].map(selector => page.locator(selector).boundingBox()))
+    assert(workflowBox.y + workflowBox.height <= statsBox.y && statsBox.y + statsBox.height <= graphBox.y, 'Order must be operation guide, statistics, then relationship map')
+
+    const graph = await json('projects?dataset_id=official-reference&sort=imported_at&page=1&page_size=3')
+    assert.equal(await page.locator('.map-node.project').count(), graph.data.length)
+    assert.deepEqual(await page.locator('.recent-project-select').allTextContents(), graph.data.map(project => project.name))
+    await page.locator('.recent-project-select').first().click()
+    assert.equal(await page.locator('.map-node.project.selected').count(), 1)
+    await page.locator('.recent-status-help summary').click()
+    assert.match(await page.locator('.recent-status-help').innerText(), /不纳入关系分析/)
+    await page.locator('.recent-status-help summary').click()
+    const node = page.locator('.map-node.project').first(), label = await node.getAttribute('aria-label')
+    await node.focus(); await page.keyboard.press('Enter')
+    const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('.detail-title').waitFor()
+    assert(label.includes(await panel.locator('.detail-title').innerText())); await page.keyboard.press('Escape')
+  })
   await check('empty dataset has a usable import entry', async () => {
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official'); await page.getByRole('heading', { name: '这个数据集还没有项目', exact: true }).waitFor(); assert(await page.getByRole('button', { name: '前往数据接入', exact: true }).isVisible())
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference'); await page.getByRole('heading', { name: '采购项目 26', exact: true }).waitFor()
@@ -77,7 +97,13 @@ try {
     await page.getByRole('button', { name: '金额与数量筛选', exact: false }).click()
     for (const [label, value] of [['单价（元）', item.unit_price], ['数量', item.quantity], ['总价（元）', item.total_price]]) for (const edge of ['下限', '上限']) await page.getByRole('spinbutton', { name: label + edge, exact: true }).fill(String(value))
     await page.getByRole('button', { name: '检索', exact: true }).click(); await page.waitForFunction(() => document.querySelector('.result-summary')?.textContent.includes('10 项条件已应用'))
-    assert((await page.locator('.items-table tbody tr').count()) >= 1); await page.getByRole('button', { name: '查看原文', exact: true }).first().click(); await page.getByRole('dialog', { name: '标的来源', exact: true }).locator('.source-quote').waitFor(); await screenshot('source-evidence-desktop'); await page.keyboard.press('Escape')
+    assert((await page.locator('.items-table tbody tr').count()) >= 1); await page.getByRole('button', { name: '查看原文', exact: true }).first().click(); await page.getByRole('dialog', { name: '标的来源', exact: true }).locator('.source-quote').waitFor(); const evidence = page.getByRole('dialog', { name: '标的来源', exact: true })
+    assert.equal(await evidence.locator('.evidence-fields button').count(), 7)
+    assert.equal(await evidence.locator('mark').first().innerText(), item.model)
+    await evidence.locator('.evidence-fields button').filter({ has: page.getByText('品牌', { exact: true }) }).click()
+    assert.equal(await evidence.locator('mark').first().innerText(), item.brand)
+    await evidence.locator('.evidence-fields button').filter({ has: page.getByText('规格型号', { exact: true }) }).click()
+    await screenshot('source-evidence-desktop'); await page.keyboard.press('Escape')
     await page.getByRole('spinbutton', { name: '单价（元）下限', exact: true }).fill('999999999'); await page.getByRole('button', { name: '检索', exact: true }).click(); await page.getByRole('alert').filter({ hasText: '筛选下限不能大于上限' }).waitFor()
     await page.getByRole('button', { name: '重置', exact: true }).click(); await page.getByText('1–20 / 138 条', { exact: true }).waitFor(); await page.getByRole('button', { name: '标的下一页', exact: true }).click(); await page.getByText('21–40 / 138 条', { exact: true }).waitFor()
     await page.getByRole('combobox', { name: '标的每页条数', exact: true }).selectOption('50'); await page.getByText('1–50 / 138 条', { exact: true }).waitFor(); await screenshot('items-desktop')
@@ -100,27 +126,91 @@ try {
     await page.getByRole('button', { name: '重置', exact: true }).click(); await page.getByText('1–50 / 138 条', { exact: true }).waitFor()
   })
   await navigate('relations', '关系分析')
+  await check('dataset overview is available before queries and searches the complete inventory', async () => {
+    const expected = await json('graph/overview?dataset_id=official-reference')
+    await page.getByRole('button', { name: '数据集关系总览', exact: false }).click()
+    const panel = page.getByRole('dialog', { name: '数据集关系总览', exact: true })
+    await panel.locator('.dataset-network-canvas canvas').waitFor()
+    const totals = await panel.locator('.overview-totals strong').allTextContents()
+    assert.equal(totals[0], new Intl.NumberFormat('zh-CN').format(expected.totals.enterprises))
+    const supplier = expected.nodes.find(node => node.type === 'supplier')
+    await panel.getByRole('searchbox', { name: '搜索总体网络企业', exact: true }).fill(supplier.name)
+    await panel.getByLabel('总览角色', { exact: true }).selectOption('supplier')
+    await panel.locator('.dataset-network-canvas canvas').waitFor()
+    assert.match(await panel.locator('.overview-coverage').innerText(), /匹配 1 家/)
+    await screenshot('dataset-network-overview')
+    await panel.getByRole('searchbox', { name: '搜索总体网络企业', exact: true }).fill('nonexistent-enterprise-probe')
+    await panel.getByText('没有匹配的企业 / 单位，请调整搜索条件。', { exact: true }).waitFor()
+    await panel.getByRole('button', { name: '关闭侧栏', exact: true }).click(); await panel.waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('[data-testid=scenario-result]').count(), 0)
+  })
   const scenarios = ['purchaser-partners', 'purchaser-bidders', 'supplier-competitors', 'common-purchasers', 'common-projects']
   for (const scenario of scenarios) await check('live scenario: ' + scenario, async () => {
     await page.locator(`[data-scenario-tab="${scenario}"]`).click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.getByRole('button', { name: '查询关系', exact: true }).click()
     const result = page.locator(`[data-testid="scenario-result"][data-scenario="${scenario}"]`); await result.waitFor(); await page.waitForFunction(() => document.querySelector('[data-testid=scenario-result]')?.getAttribute('data-render-ms') != null)
     assert(await result.locator('tbody tr').count() > 0); assert(Number(await result.getAttribute('data-render-ms')) < 10000)
-    await result.getByRole('button', { name: '图表', exact: true }).click(); assert(await result.locator('.bar-row').count() > 0)
-    if (scenario !== 'purchaser-bidders') { await result.getByRole('combobox', { name: '图表比较指标', exact: true }).selectOption('amount'); assert((await result.locator('.bar-number').first().innerText()).length > 0) }
-    await result.getByRole('button', { name: '表格', exact: true }).click()
+    assert.equal(await result.locator('.analysis-summary > div').count(), 3)
+    const [headingBox, summaryBox] = await Promise.all(['.result-overview-heading', '.analysis-summary'].map(selector => result.locator(selector).boundingBox()))
+    assert(headingBox.y + headingBox.height <= summaryBox.y, 'Result title must precede compact metrics')
+
+    assert(await result.locator(scenario.startsWith('common-') ? '.comparison-matrix tbody tr' : '.bar-row').count() > 0)
+    if (!['purchaser-bidders', 'common-projects'].includes(scenario)) { await result.locator('.metric-switch').getByRole('button', { name: '已披露金额', exact: true }).click(); assert((await result.locator(scenario === 'common-purchasers' ? '.matrix-cell' : '.bar-number').first().innerText()).length > 0) }
+    await screenshot(`chart-${scenario}`)
     if (scenario === 'purchaser-partners') { await screenshot('relations-desktop'); await result.getByRole('button', { name: '产品品牌', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'purchaser-bidders') { await result.getByRole('button', { name: '共同投标组合', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
-    if (scenario === 'supplier-competitors') { await result.getByRole('button', { name: '全部参与方', exact: true }).click(); const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' }); const expected = await json('analytics/supplier-competitors?' + params); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length)); report.allParticipants = expected.all_participants.length; if (expected.all_participants.length > 15) { await result.getByRole('button', { name: '关系结果下一页', exact: true }).click(); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length - 15)) } }
+    if (scenario === 'supplier-competitors') {
+      const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' })
+      const expected = await json('analytics/supplier-competitors?' + params)
+      await result.getByTestId('network-summary').filter({ hasText: `展示 ${Math.min(8, expected.top5.length)} / ${expected.top5.length} 项` }).waitFor()
+      await result.getByRole('button', { name: '全部参与方', exact: true }).click()
+      await result.getByTestId('network-summary').filter({ hasText: `展示 ${Math.min(8, expected.all_participants.length)} / ${expected.all_participants.length} 项` }).waitFor()
+      assert.equal(await result.locator('.relation-table tbody tr').count(), Math.min(15, expected.all_participants.length))
+      report.allParticipants = expected.all_participants.length
+      if (expected.all_participants.length > 15) {
+        await result.getByRole('button', { name: '关系结果下一页', exact: true }).click()
+        assert.equal(await result.locator('.relation-table tbody tr').count(), Math.min(15, expected.all_participants.length - 15))
+      }
+    }
     if (scenario === 'common-purchasers') { await result.locator('summary').first().click(); assert(await result.locator('.supplier-details dd').count() >= 2) }
+    if (scenario === 'common-projects') {
+      const expected = await json('analytics/common-projects?' + new URLSearchParams({ dataset_id: 'official-reference', suppliers: '中国电信股份有限公司广东分公司,中国移动通信集团广东有限公司' }))
+      assert((await result.locator('.analysis-summary').innerText()).includes(new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(expected.summary.total_amount)))
+      const expansion = result.locator('.bid-expansion').first()
+      assert.equal(await expansion.getAttribute('open'), null)
+      await expansion.locator('summary').click(); assert(await expansion.locator('li').count() > 1)
+      await expansion.locator('summary').click()
+    }
     if (scenario === 'common-projects') { await result.getByRole('button', { name: '查看竞标详情', exact: true }).first().click(); const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('tbody tr').first().waitFor(); assert.match(await panel.innerText(), /未中标|中标/); await page.keyboard.press('Escape'); await screenshot('common-projects-desktop') }
+  })
+  await check('query-only network, icon toolbar, reset menu and full screen', async () => {
+    await page.locator('.network-canvas canvas').waitFor()
+    assert.equal(await page.getByLabel('关系网络范围', { exact: true }).count(), 0)
+    assert.match(await page.locator('[data-testid=network-summary]').innerText(), /展示 2 \/ 2 项/)
+    await page.getByRole('button', { name: '全屏查看', exact: true }).click()
+    assert.equal(await page.locator('.network-expanded').count(), 1)
+    await screenshot('query-network-expanded')
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('.network-expanded').count(), 0)
+    await page.getByRole('button', { name: '适应画布', exact: true }).click()
+    await page.getByRole('button', { name: '更多画布操作', exact: true }).click()
+    await page.getByRole('button', { name: '重置视图', exact: true }).click()
+    await page.locator('.network-canvas canvas').waitFor()
+    await page.locator('.network-canvas canvas').waitFor()
   })
   await check('supplier search picker, keyboard close and input invalidation', async () => {
     await page.getByRole('button', { name: '移除中国移动通信集团广东有限公司', exact: true }).click(); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isDisabled()); assert.equal(await page.locator('[data-testid=scenario-result]').count(), 0)
     await page.locator('.select-trigger').click(); await page.getByRole('searchbox', { name: '搜索供应商', exact: true }).fill('中国移动'); const checkbox = page.getByRole('checkbox', { name: '中国移动通信集团广东有限公司', exact: true }); await checkbox.check(); await page.keyboard.press('Escape'); assert.equal(await page.locator('.picker-popover').count(), 0); assert.equal(await page.locator('.select-trigger').getAttribute('aria-expanded'), 'false'); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isEnabled())
   })
-  await check('optional graph loads, resizes and closes without page errors', async () => {
-    await page.getByRole('button', { name: '查看关系网络', exact: true }).click(); await page.locator('.network-canvas canvas').waitFor(); assert.match(await page.getByTestId('network-summary').innerText(), /个主体/)
-    await page.getByRole('combobox', { name: '关系网络采购包数', exact: true }).selectOption('16'); await page.locator('.network-canvas canvas').waitFor(); await screenshot('network-desktop', { fullPage: true }); await page.getByRole('button', { name: '收起关系网络', exact: true }).click(); assert.equal(await page.locator('.network-canvas').count(), 0)
+  await check('network and chart automatically return with query results', async () => {
+    assert.equal(await page.locator('.network-canvas').count(), 0)
+    await page.getByRole('button', { name: '填入样本示例', exact: true }).click()
+    await page.getByRole('button', { name: '查询关系', exact: true }).click()
+    await page.locator('.network-canvas canvas').waitFor()
+    assert.equal(await page.getByRole('button', { name: '表格', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '图表', exact: true }).count(), 0)
+    assert.equal(await page.locator('.comparison-matrix').count(), 1)
+    assert.equal(await page.locator('.relation-table').count(), 1)
+    await page.getByRole('combobox', { name: '关系网络显示数量', exact: true }).selectOption('16')
+    await page.locator('.network-canvas canvas').waitFor(); await screenshot('network-desktop', { fullPage: true })
   })
   await check('standard workbook and quality downloads', async () => {
     await download(page.getByRole('button', { name: '导出三表', exact: false }), 'procurement-tables.xlsx'); await download(page.getByRole('button', { name: '处理说明', exact: true }), 'quality-report.json')
@@ -155,6 +245,10 @@ try {
       await page.setViewportSize({ width, height })
       for (const [view, title] of [['overview', '工作台'], ['items', '标的检索'], ['import', '数据接入'], ['relations', '关系分析']]) {
         await navigate(view, title); await noOverflow(`${label}-${view}`)
+        if (label === 'mobile' && view === 'overview') {
+          const [labelBox, valueBox, noteBox] = await Promise.all(['span', 'strong', 'small'].map(tag => page.locator('.stat-amount > ' + tag).boundingBox()))
+          assert(labelBox.y + labelBox.height <= valueBox.y && valueBox.y + valueBox.height <= noteBox.y, 'Mobile amount label, value and note must not overlap')
+        }
         if (label === 'mobile' || (label === 'tablet' && view === 'overview') || (label === 'large' && view === 'overview')) await screenshot(`${view}-${label}`)
       }
       if (label === 'mobile') { await page.locator('[data-scenario-tab=common-projects]').click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.locator('.select-trigger').click(); await noOverflow('mobile picker'); await screenshot('supplier-picker-mobile'); await page.keyboard.press('Escape') }

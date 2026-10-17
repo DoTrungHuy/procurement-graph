@@ -15,7 +15,8 @@ export const statusName = value => ({
 }[value] || value || '未记录')
 export const statusTone = value => ['failed', 'completed_with_errors'].includes(value) ? 'danger'
   : ['partial', 'fallback', 'interrupted', 'completed_with_warnings'].includes(value) ? 'warning'
-  : ['processing', 'queued'].includes(value) ? 'active' : 'neutral'
+  : ['processing', 'queued'].includes(value) ? 'active'
+  : ['complete', 'completed', 'parsed', 'cached'].includes(value) ? 'success' : 'neutral'
 export const modeName = value => ({ 'parse-only': '解析预检', replay: '历史响应回放', extract: '模型抽取' }[value] || value)
 export const datasetName = id => ({
   'official-reference': '公告核验样本', official: '官方基准数据', default: '工作数据', demo: '合成演示数据'

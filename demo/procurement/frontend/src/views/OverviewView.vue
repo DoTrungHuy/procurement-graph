@@ -4,13 +4,23 @@ import { lotLabel, money, number, statusName, statusTone } from '../utils/presen
 import AppIcon from '../components/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import WorkspaceOverview from '../components/WorkspaceOverview.vue'
 const w = useWorkspace()
 function page(value) { w.projectPage = value; w.loadProjects(false) }
 </script>
 
 <template>
   <section aria-labelledby="overview-title">
-    <div class="page-heading"><h1 id="overview-title">工作台</h1><button class="button primary" @click="w.navigate('import')">导入数据</button></div>
+    <div class="page-heading"><div><h1 id="overview-title">工作台</h1><p>采购数据检索、处理任务与业务关系分析。</p></div><button class="button primary" @click="w.navigate('import')"><AppIcon name="upload" />导入数据</button></div>
+    <section class="operation-guide" aria-labelledby="operation-guide-title">
+      <div class="guide-heading"><h2 id="operation-guide-title">操作指引</h2><p>按以下步骤完成数据处理与分析，点击步骤进入对应页面。</p></div>
+      <nav class="workflow-strip" aria-label="操作步骤导航">
+        <button @click="w.navigate('import')"><span>01</span><div><strong>导入公告</strong><small>上传公告正文及附件</small></div><b aria-hidden="true">→</b></button>
+        <button @click="w.navigate('import')"><span>02</span><div><strong>查看处理结果</strong><small>检查处理进度与异常说明</small></div><b aria-hidden="true">→</b></button>
+        <button @click="w.navigate('items')"><span>03</span><div><strong>核验标的</strong><small>检索字段，对照原文核验</small></div><b aria-hidden="true">→</b></button>
+        <button @click="w.navigate('relations')"><span>04</span><div><strong>分析关系</strong><small>查询合作与竞标记录</small></div><b aria-hidden="true">→</b></button>
+      </nav>
+    </section>
     <div class="stat-strip" aria-label="当前数据概况" :aria-busy="w.datasetLoading">
       <div><span>公告</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.notices) }}</strong></div>
       <div><span>采购包</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.projects) }}</strong></div>
@@ -18,6 +28,7 @@ function page(value) { w.projectPage = value; w.loadProjects(false) }
       <div><span>投标主体</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.suppliers) }}</strong></div>
       <div class="stat-amount"><span>已披露中标金额</span><strong>{{ w.datasetLoading ? '—' : money(w.stats.total_amount) }}</strong><small v-if="w.stats.unknown_amount_count">另有 {{ w.stats.unknown_amount_count }} 个采购包金额未披露</small></div>
     </div>
+    <WorkspaceOverview />
     <section class="surface" aria-labelledby="projects-title">
       <div class="section-heading"><h2 id="projects-title">采购项目 <span class="count">{{ w.projectTotal }}</span></h2><button class="text-button" :disabled="w.datasetLoading" @click="w.loadDataset()">刷新数据</button></div>
       <form class="table-toolbar project-toolbar" @submit.prevent="w.loadProjects()">
