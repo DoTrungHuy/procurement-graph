@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from contextvars import ContextVar
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import httpx
@@ -21,6 +22,7 @@ from .parsers import PARSE_WARNING_PREFIX, parse_file
 from .reconciliation import reconcile_items
 from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
+from .model_transport import read_model_response
 
 PIPELINE_VERSION = 'package-v2.10'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
@@ -138,7 +140,8 @@ class DeepSeekExtractor:
                     if not settings.model_network_enabled:
                         raise FatalModelError('模型网络调用已暂停；请先确定样本与预算，再明确启用 MODEL_NETWORK_ENABLED')
                     if self.client is None:
-                        self.client = httpx.AsyncClient(timeout=httpx.Timeout(180,connect=20))
+                        loopback = httpx.URL(settings.deepseek_base_url).host in {'127.0.0.1', 'localhost', '::1'}
+                        self.client = httpx.AsyncClient(timeout=httpx.Timeout(180,connect=20), trust_env=not loopback)
                     self.calls += 1
                     if usage is not None:
                         usage['requests'] += 1
@@ -154,7 +157,17 @@ class DeepSeekExtractor:
                             self.fatal_error = f'模型服务 HTTP {response.status_code}；请核对模型、凭据或余额'
                             raise FatalModelError(self.fatal_error)
                         raise RuntimeError(f'模型服务 HTTP {response.status_code}')
-                    envelope = response.json()
+                    envelope = read_model_response(response)
+                    if settings.model_require_free:
+                        try:
+                            billing = envelope.get('usage') or {}
+                            credit = Decimal(str(billing.get('credit')))
+                            free = credit.is_finite() and credit == 0
+                        except InvalidOperation:
+                            free = False
+                        if not free:
+                            self.fatal_error = '免费模式下上游未确认零积分消耗，已停止后续模型请求'
+                            raise FatalModelError(self.fatal_error)
                     for key in self.total_usage:
                         value = int(envelope.get('usage', {}).get(key, 0) or 0)
                         self.total_usage[key] += value

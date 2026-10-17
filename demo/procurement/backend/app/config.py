@@ -29,6 +29,7 @@ class Settings:
     model_settings_error: str = ''
     model_profile_path: str = os.getenv('MODEL_PROFILE_PATH') or str(WORKSPACE / 'config/model-profile.local.json')
     model_network_enabled: bool = _bool('MODEL_NETWORK_ENABLED', False)
+    model_require_free: bool = _bool('MODEL_REQUIRE_FREE', False)
     model_max_tokens: int = max(1024, min(65536, int(os.getenv('MODEL_MAX_TOKENS', '16384'))))
     model_thinking: bool = _bool('MODEL_THINKING', False)
     extraction_strategy: str = os.getenv('EXTRACTION_STRATEGY', 'schema')
