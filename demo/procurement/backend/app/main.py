@@ -397,6 +397,11 @@ def graph(limit: int=Query(80,ge=1,le=300),dataset_id: str=Depends(dataset)):
     return analytics.relationship_graph(limit,dataset_id)
 
 
+@app.get('/api/graph/overview')
+def graph_overview(dataset_id: str=Depends(dataset)):
+    return analytics.relationship_overview(dataset_id)
+
+
 @app.get('/api/export/standard.xlsx')
 def export_standard(dataset_id: str=Depends(dataset),job_id: str | None=None,include_notes: bool=False,
                     item_view: str=Query('source',pattern='^(source|detail)$')):

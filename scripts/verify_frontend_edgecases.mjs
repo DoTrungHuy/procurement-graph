@@ -49,11 +49,15 @@ try {
     await page.getByRole('button', { name: '查询关系', exact: true }).click(); await page.locator('[data-testid=scenario-result] tbody tr').waitFor(); assert.match(await page.locator('.scenario-results').innerText(), /广东南方通信建设有限公司/)
     await page.unroute('**/api/analytics/purchaser-partners?**')
   })
-  await check('closing a graph while data is loading does not render into a disposed view', async () => {
-    const entered = latch(), blocked = latch()
-    await page.route('**/api/graph?**', async route => { const response = await route.fetch(); entered.release(); await blocked.promise; await route.fulfill({ response }) })
-    await page.getByRole('button', { name: '查看关系网络', exact: true }).click(); await entered.promise; await page.getByRole('button', { name: '收起关系网络', exact: true }).click(); blocked.release(); await wait(500)
-    assert.equal(await page.locator('.network-canvas').count(), 0); assert.deepEqual(report.consoleErrors, []); await page.unroute('**/api/graph?**')
+  await check('invalidating a query during network loading safely removes its canvas', async () => {
+    await page.getByRole('button', { name: '查询关系', exact: true }).click()
+    await page.locator('.network-canvas canvas').waitFor()
+    await page.getByLabel('关系网络显示数量', { exact: true }).selectOption('16')
+    const options = await page.getByLabel('采购单位', { exact: true }).locator('option').evaluateAll(elements => elements.map(element => element.value))
+    const selected = await page.getByLabel('采购单位', { exact: true }).inputValue()
+    await page.getByLabel('采购单位', { exact: true }).selectOption(options.find(value => value !== selected))
+    await wait(500)
+    assert.equal(await page.locator('.network-canvas').count(), 0); assert.deepEqual(report.consoleErrors, [])
   })
   await check('skip link focuses the current page without changing the route', async () => {
     await navigate('items'); await page.locator('.skip-link').focus(); await page.keyboard.press('Enter'); assert.match(page.url(), /#\/items$/); assert.equal(await page.evaluate(() => document.activeElement.id), 'main-content')
@@ -75,10 +79,10 @@ try {
     await page.waitForFunction(() => parseFloat(document.querySelector('.primary-nav')?.style.getPropertyValue('--tab-width')) > 0)
     assert.equal(await page.locator('.topbar').evaluate(element => getComputedStyle(element).position), 'sticky')
     await page.emulateMedia({ reducedMotion: 'reduce' }); await page.setViewportSize({ width: 1440, height: 560 }); await navigate('relations')
-    await page.getByRole('button', { name: '查看关系网络', exact: true }).click(); await page.locator('.network-canvas canvas').waitFor(); await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.getByRole('button', { name: '查询关系', exact: true }).click(); await page.locator('.network-canvas canvas').waitFor(); await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
     await page.getByRole('button', { name: '回到顶部', exact: false }).waitFor(); await page.getByRole('button', { name: '回到顶部', exact: false }).click(); await page.waitForFunction(() => scrollY === 0)
     const durations = await page.locator('.primary-nav').evaluate(element => getComputedStyle(element, '::before').transitionDuration)
-    assert(durations.split(',').every(value => parseFloat(value) === 0)); await page.getByRole('button', { name: '收起关系网络', exact: true }).click()
+    assert(durations.split(',').every(value => parseFloat(value) === 0))
   })
   await check('project sorting resets pagination and survives refresh and reload', async () => {
     await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('overview')
@@ -100,7 +104,8 @@ try {
   await check('overview preview rejects a delayed response from another dataset and recovers from failure', async () => {
     await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('items')
     const entered = latch(), blocked = latch()
-    await page.route('**/api/graph?**', async route => {
+    await page.route('**/api/projects?**', async route => {
+      if (new URL(route.request().url()).searchParams.get('page_size') !== '3') return route.continue()
       if (new URL(route.request().url()).searchParams.get('dataset_id') !== 'official-reference') return route.continue()
       const response = await route.fetch(); entered.release(); await blocked.promise; await route.fulfill({ response })
     })
@@ -109,16 +114,17 @@ try {
     await page.getByText('当前数据集暂无可展示的中标关系', { exact: true }).waitFor()
     blocked.release(); await wait(300)
     assert.equal(await page.locator('.map-node').count(), 0)
-    await page.unroute('**/api/graph?**')
+    await page.unroute('**/api/projects?**')
     let failOnce = true
-    await page.route('**/api/graph?**', route => {
+    await page.route('**/api/projects?**', route => {
+      if (new URL(route.request().url()).searchParams.get('page_size') !== '3') return route.continue()
       if (failOnce) { failOnce = false; return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"preview temporarily unavailable"}' }) }
       return route.continue()
     })
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference')
     await page.getByRole('button', { name: '重新加载概览', exact: true }).click()
     await page.locator('.map-node.project').first().waitFor()
-    await page.unroute('**/api/graph?**')
+    await page.unroute('**/api/projects?**')
   })
   assert.deepEqual(report.consoleErrors, []); assert.deepEqual(report.blockedRequests, []); report.passed = true
 } catch (error) { report.passed = false; report.error = error.stack; console.error(error); await page.screenshot({ path: path.join(output, 'edgecase-failure.png') }).catch(() => {}) }

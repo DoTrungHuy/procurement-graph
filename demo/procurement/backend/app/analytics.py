@@ -180,7 +180,7 @@ def common_projects(suppliers: list[str], dataset_id: str='default') -> dict:
              'total_amount':_sum(amounts),'unknown_amount_count':sum(x is None for x in amounts)},'projects':result,'count_unit':'采购包'}
 
 
-def relationship_graph(limit: int=80, dataset_id: str='default') -> dict:
+def relationship_graph(limit: int | None=80, dataset_id: str='default') -> dict:
     packages,bids,_ = _data(dataset_id)
     ids = set(sorted(packages,reverse=True)[:limit])
     nodes,links = {},[]
@@ -199,3 +199,24 @@ def relationship_graph(limit: int=80, dataset_id: str='default') -> dict:
         links.append({'source':key,'target':f"project:{bid['project_id']}",
                       'relation':'中标' if bid['is_winner'] else '投标','value':bid['bid_amount']})
     return {'nodes':list(nodes.values()),'links':links}
+
+
+def relationship_overview(dataset_id: str='default') -> dict:
+    """Full entity inventory; only validated model records contribute edges."""
+    graph = relationship_graph(None, dataset_id)
+    nodes = {node['id']: node for node in graph['nodes']}
+    for row in rows("SELECT DISTINCT purchaser name FROM projects WHERE dataset_id=? AND purchaser<>''", (dataset_id,)):
+        key = 'purchaser:' + row['name']
+        nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'purchaser'})
+    for row in rows("SELECT DISTINCT b.bidder name FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.bidder<>''", (dataset_id,)):
+        key = 'supplier:' + row['name']
+        nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'supplier'})
+    graph['nodes'] = list(nodes.values())
+    graph['totals'] = {
+        'enterprises': len({n['name'] for n in nodes.values() if n['type'] != 'project'}),
+        'suppliers': sum(n['type'] == 'supplier' for n in nodes.values()),
+        'purchasers': sum(n['type'] == 'purchaser' for n in nodes.values()),
+        'projects': sum(n['type'] == 'project' for n in nodes.values()),
+        'links': len(graph['links'])
+    }
+    return graph

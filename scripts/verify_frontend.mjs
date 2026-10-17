@@ -54,8 +54,19 @@ try {
   })
   await check('overview relationship preview uses real packages and supports keyboard navigation', async () => {
     await page.locator('.map-node.project').first().waitFor()
-    const graph = await json('graph?dataset_id=official-reference&limit=3')
-    assert.equal(await page.locator('.map-node.project').count(), graph.nodes.filter(node => node.type === 'project').length)
+    assert.equal(await page.getByRole('heading', { name: '近期项目', exact: true }).count(), 1)
+    assert.equal(await page.getByText('DATA HEALTH', { exact: true }).count(), 0)
+    const [statsBox, workflowBox, graphBox] = await Promise.all(['.stat-strip', '.workflow-strip', '.overview-grid'].map(selector => page.locator(selector).boundingBox()))
+    assert(workflowBox.y + workflowBox.height <= statsBox.y && statsBox.y + statsBox.height <= graphBox.y, 'Order must be operation guide, statistics, then relationship map')
+
+    const graph = await json('projects?dataset_id=official-reference&sort=imported_at&page=1&page_size=3')
+    assert.equal(await page.locator('.map-node.project').count(), graph.data.length)
+    assert.deepEqual(await page.locator('.recent-project-select').allTextContents(), graph.data.map(project => project.name))
+    await page.locator('.recent-project-select').first().click()
+    assert.equal(await page.locator('.map-node.project.selected').count(), 1)
+    await page.locator('.recent-status-help summary').click()
+    assert.match(await page.locator('.recent-status-help').innerText(), /不纳入关系分析/)
+    await page.locator('.recent-status-help summary').click()
     const node = page.locator('.map-node.project').first(), label = await node.getAttribute('aria-label')
     await node.focus(); await page.keyboard.press('Enter')
     const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('.detail-title').waitFor()
@@ -115,15 +126,36 @@ try {
     await page.getByRole('button', { name: '重置', exact: true }).click(); await page.getByText('1–50 / 138 条', { exact: true }).waitFor()
   })
   await navigate('relations', '关系分析')
+  await check('dataset overview is available before queries and searches the complete inventory', async () => {
+    const expected = await json('graph/overview?dataset_id=official-reference')
+    await page.getByRole('button', { name: '数据集关系总览', exact: false }).click()
+    const panel = page.getByRole('dialog', { name: '数据集关系总览', exact: true })
+    await panel.locator('.dataset-network-canvas canvas').waitFor()
+    const totals = await panel.locator('.overview-totals strong').allTextContents()
+    assert.equal(totals[0], new Intl.NumberFormat('zh-CN').format(expected.totals.enterprises))
+    const supplier = expected.nodes.find(node => node.type === 'supplier')
+    await panel.getByRole('searchbox', { name: '搜索总体网络企业', exact: true }).fill(supplier.name)
+    await panel.getByLabel('总览角色', { exact: true }).selectOption('supplier')
+    await panel.locator('.dataset-network-canvas canvas').waitFor()
+    assert.match(await panel.locator('.overview-coverage').innerText(), /匹配 1 家/)
+    await screenshot('dataset-network-overview')
+    await panel.getByRole('searchbox', { name: '搜索总体网络企业', exact: true }).fill('nonexistent-enterprise-probe')
+    await panel.getByText('没有匹配的企业 / 单位，请调整搜索条件。', { exact: true }).waitFor()
+    await panel.getByRole('button', { name: '关闭侧栏', exact: true }).click(); await panel.waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('[data-testid=scenario-result]').count(), 0)
+  })
   const scenarios = ['purchaser-partners', 'purchaser-bidders', 'supplier-competitors', 'common-purchasers', 'common-projects']
   for (const scenario of scenarios) await check('live scenario: ' + scenario, async () => {
     await page.locator(`[data-scenario-tab="${scenario}"]`).click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.getByRole('button', { name: '查询关系', exact: true }).click()
     const result = page.locator(`[data-testid="scenario-result"][data-scenario="${scenario}"]`); await result.waitFor(); await page.waitForFunction(() => document.querySelector('[data-testid=scenario-result]')?.getAttribute('data-render-ms') != null)
     assert(await result.locator('tbody tr').count() > 0); assert(Number(await result.getAttribute('data-render-ms')) < 10000)
     assert.equal(await result.locator('.analysis-summary > div').count(), 3)
-    await result.getByRole('button', { name: '图表', exact: true }).click(); assert(await result.locator('.bar-row').count() > 0)
-    if (scenario !== 'purchaser-bidders') { await result.getByRole('combobox', { name: '图表比较指标', exact: true }).selectOption('amount'); assert((await result.locator('.bar-number').first().innerText()).length > 0) }
-    await result.getByRole('button', { name: '表格', exact: true }).click()
+    const [headingBox, summaryBox] = await Promise.all(['.result-overview-heading', '.analysis-summary'].map(selector => result.locator(selector).boundingBox()))
+    assert(headingBox.y + headingBox.height <= summaryBox.y, 'Result title must precede compact metrics')
+
+    assert(await result.locator(scenario.startsWith('common-') ? '.comparison-matrix tbody tr' : '.bar-row').count() > 0)
+    if (!['purchaser-bidders', 'common-projects'].includes(scenario)) { await result.locator('.metric-switch').getByRole('button', { name: '已披露金额', exact: true }).click(); assert((await result.locator(scenario === 'common-purchasers' ? '.matrix-cell' : '.bar-number').first().innerText()).length > 0) }
+    await screenshot(`chart-${scenario}`)
     if (scenario === 'purchaser-partners') { await screenshot('relations-desktop'); await result.getByRole('button', { name: '产品品牌', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'purchaser-bidders') { await result.getByRole('button', { name: '共同投标组合', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'supplier-competitors') { await result.getByRole('button', { name: '全部参与方', exact: true }).click(); const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' }); const expected = await json('analytics/supplier-competitors?' + params); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length)); report.allParticipants = expected.all_participants.length; if (expected.all_participants.length > 15) { await result.getByRole('button', { name: '关系结果下一页', exact: true }).click(); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length - 15)) } }
@@ -138,13 +170,35 @@ try {
     }
     if (scenario === 'common-projects') { await result.getByRole('button', { name: '查看竞标详情', exact: true }).first().click(); const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('tbody tr').first().waitFor(); assert.match(await panel.innerText(), /未中标|中标/); await page.keyboard.press('Escape'); await screenshot('common-projects-desktop') }
   })
+  await check('query-only network, icon toolbar, reset menu and full screen', async () => {
+    await page.locator('.network-canvas canvas').waitFor()
+    assert.equal(await page.getByLabel('关系网络范围', { exact: true }).count(), 0)
+    assert.match(await page.locator('[data-testid=network-summary]').innerText(), /展示 2 \/ 2 项/)
+    await page.getByRole('button', { name: '全屏查看', exact: true }).click()
+    assert.equal(await page.locator('.network-expanded').count(), 1)
+    await screenshot('query-network-expanded')
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('.network-expanded').count(), 0)
+    await page.getByRole('button', { name: '适应画布', exact: true }).click()
+    await page.getByRole('button', { name: '更多画布操作', exact: true }).click()
+    await page.getByRole('button', { name: '重置视图', exact: true }).click()
+    await page.locator('.network-canvas canvas').waitFor()
+    await page.locator('.network-canvas canvas').waitFor()
+  })
   await check('supplier search picker, keyboard close and input invalidation', async () => {
     await page.getByRole('button', { name: '移除中国移动通信集团广东有限公司', exact: true }).click(); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isDisabled()); assert.equal(await page.locator('[data-testid=scenario-result]').count(), 0)
     await page.locator('.select-trigger').click(); await page.getByRole('searchbox', { name: '搜索供应商', exact: true }).fill('中国移动'); const checkbox = page.getByRole('checkbox', { name: '中国移动通信集团广东有限公司', exact: true }); await checkbox.check(); await page.keyboard.press('Escape'); assert.equal(await page.locator('.picker-popover').count(), 0); assert.equal(await page.locator('.select-trigger').getAttribute('aria-expanded'), 'false'); assert(await page.getByRole('button', { name: '查询关系', exact: true }).isEnabled())
   })
-  await check('optional graph loads, resizes and closes without page errors', async () => {
-    await page.getByRole('button', { name: '查看关系网络', exact: true }).click(); await page.locator('.network-canvas canvas').waitFor(); assert.match(await page.getByTestId('network-summary').innerText(), /个主体/)
-    await page.getByRole('combobox', { name: '关系网络采购包数', exact: true }).selectOption('16'); await page.locator('.network-canvas canvas').waitFor(); await screenshot('network-desktop', { fullPage: true }); await page.getByRole('button', { name: '收起关系网络', exact: true }).click(); assert.equal(await page.locator('.network-canvas').count(), 0)
+  await check('network and chart automatically return with query results', async () => {
+    assert.equal(await page.locator('.network-canvas').count(), 0)
+    await page.getByRole('button', { name: '填入样本示例', exact: true }).click()
+    await page.getByRole('button', { name: '查询关系', exact: true }).click()
+    await page.locator('.network-canvas canvas').waitFor()
+    assert.equal(await page.getByRole('button', { name: '表格', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '图表', exact: true }).count(), 0)
+    assert.equal(await page.locator('.comparison-matrix').count(), 1)
+    assert.equal(await page.locator('.relation-table').count(), 1)
+    await page.getByRole('combobox', { name: '关系网络显示数量', exact: true }).selectOption('16')
+    await page.locator('.network-canvas canvas').waitFor(); await screenshot('network-desktop', { fullPage: true })
   })
   await check('standard workbook and quality downloads', async () => {
     await download(page.getByRole('button', { name: '导出三表', exact: false }), 'procurement-tables.xlsx'); await download(page.getByRole('button', { name: '处理说明', exact: true }), 'quality-report.json')

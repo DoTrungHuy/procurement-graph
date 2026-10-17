@@ -30,6 +30,7 @@ export const api = {
   modelSettings: () => request('/settings/model'),
   saveModelSettings: body => request('/settings/model', {}, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}),
   stats: params => request('/stats', params), projects: params => request('/projects', params),
+  graphOverview: params => request('/graph/overview', params),
   project: (id, params) => request(`/projects/${id}`, params), items: params => request('/items', params),
   entities: (type, params) => request('/entities', {...params, type}), graph: params => request('/graph', params),
   ingest: (files, dataset_id, mode = 'extract') => {
