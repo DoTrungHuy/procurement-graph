@@ -71,7 +71,7 @@ try {
   })
   await check('visual refinements keep tab markers, sticky controls and reduced motion working', async () => {
     assert.equal(await page.locator('.primary-nav .app-icon svg').count(), 4)
-    assert.equal(await page.locator('h1').evaluate(element => getComputedStyle(element).fontSize), '22px')
+    assert.equal(await page.locator('h1').evaluate(element => getComputedStyle(element).fontSize), '30px')
     await page.waitForFunction(() => parseFloat(document.querySelector('.primary-nav')?.style.getPropertyValue('--tab-width')) > 0)
     assert.equal(await page.locator('.topbar').evaluate(element => getComputedStyle(element).position), 'sticky')
     await page.emulateMedia({ reducedMotion: 'reduce' }); await page.setViewportSize({ width: 1440, height: 560 }); await navigate('relations')
@@ -96,6 +96,29 @@ try {
     assert.deepEqual(await page.locator('.project-link').evaluateAll(elements => elements.map(element => element.title)), titles)
     await page.screenshot({ path: path.join(output, 'project-sort-desktop.png') })
     await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: path.join(output, 'project-sort-mobile.png') })
+  })
+  await check('overview preview rejects a delayed response from another dataset and recovers from failure', async () => {
+    await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('items')
+    const entered = latch(), blocked = latch()
+    await page.route('**/api/graph?**', async route => {
+      if (new URL(route.request().url()).searchParams.get('dataset_id') !== 'official-reference') return route.continue()
+      const response = await route.fetch(); entered.release(); await blocked.promise; await route.fulfill({ response })
+    })
+    await navigate('overview'); await entered.promise
+    await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official')
+    await page.getByText('当前数据集暂无可展示的中标关系', { exact: true }).waitFor()
+    blocked.release(); await wait(300)
+    assert.equal(await page.locator('.map-node').count(), 0)
+    await page.unroute('**/api/graph?**')
+    let failOnce = true
+    await page.route('**/api/graph?**', route => {
+      if (failOnce) { failOnce = false; return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"preview temporarily unavailable"}' }) }
+      return route.continue()
+    })
+    await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference')
+    await page.getByRole('button', { name: '重新加载概览', exact: true }).click()
+    await page.locator('.map-node.project').first().waitFor()
+    await page.unroute('**/api/graph?**')
   })
   assert.deepEqual(report.consoleErrors, []); assert.deepEqual(report.blockedRequests, []); report.passed = true
 } catch (error) { report.passed = false; report.error = error.stack; console.error(error); await page.screenshot({ path: path.join(output, 'edgecase-failure.png') }).catch(() => {}) }

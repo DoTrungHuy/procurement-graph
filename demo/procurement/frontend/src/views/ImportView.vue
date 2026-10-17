@@ -14,7 +14,7 @@ function remove(index) { w.files = w.files.filter((_, i) => i !== index); if (fi
 
 <template>
   <section aria-labelledby="import-title">
-    <div class="page-heading"><h1 id="import-title">数据接入</h1><span v-if="!w.health.model_network_enabled" class="status neutral">模型调用已暂停</span></div>
+    <div class="page-heading"><div><span class="eyebrow">DATA INGESTION</span><h1 id="import-title">数据接入</h1><p>接入公告与附件，追踪从文件解析到结构化入库的过程。</p></div><span v-if="!w.health.model_network_enabled" class="status neutral">模型调用已暂停</span></div>
     <section class="surface import-surface" aria-label="新建处理任务">
       <div v-tab-indicator class="tabs import-tabs" aria-label="接入方式"><button v-for="method in [{ id: 'upload', title: '上传文件' }, { id: 'local', title: '本地基准数据' }, { id: 'samples', title: '核验样本' }]" :key="method.id" :class="{ active: w.importMethod === method.id }" :aria-pressed="w.importMethod === method.id" :disabled="w.jobActive" @click="w.importMethod = method.id">{{ method.title }}</button></div>
       <div class="import-body">

@@ -52,6 +52,15 @@ try {
     assert(!await page.evaluate(() => performance.getEntriesByType('resource').some(r => /\/src\/graph\.js|echarts/.test(r.name))))
     await noOverflow('desktop overview'); await screenshot('overview-desktop')
   })
+  await check('overview relationship preview uses real packages and supports keyboard navigation', async () => {
+    await page.locator('.map-node.project').first().waitFor()
+    const graph = await json('graph?dataset_id=official-reference&limit=3')
+    assert.equal(await page.locator('.map-node.project').count(), graph.nodes.filter(node => node.type === 'project').length)
+    const node = page.locator('.map-node.project').first(), label = await node.getAttribute('aria-label')
+    await node.focus(); await page.keyboard.press('Enter')
+    const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('.detail-title').waitFor()
+    assert(label.includes(await panel.locator('.detail-title').innerText())); await page.keyboard.press('Escape')
+  })
   await check('empty dataset has a usable import entry', async () => {
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official'); await page.getByRole('heading', { name: '这个数据集还没有项目', exact: true }).waitFor(); assert(await page.getByRole('button', { name: '前往数据接入', exact: true }).isVisible())
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference'); await page.getByRole('heading', { name: '采购项目 26', exact: true }).waitFor()
@@ -77,7 +86,13 @@ try {
     await page.getByRole('button', { name: '金额与数量筛选', exact: false }).click()
     for (const [label, value] of [['单价（元）', item.unit_price], ['数量', item.quantity], ['总价（元）', item.total_price]]) for (const edge of ['下限', '上限']) await page.getByRole('spinbutton', { name: label + edge, exact: true }).fill(String(value))
     await page.getByRole('button', { name: '检索', exact: true }).click(); await page.waitForFunction(() => document.querySelector('.result-summary')?.textContent.includes('10 项条件已应用'))
-    assert((await page.locator('.items-table tbody tr').count()) >= 1); await page.getByRole('button', { name: '查看原文', exact: true }).first().click(); await page.getByRole('dialog', { name: '标的来源', exact: true }).locator('.source-quote').waitFor(); await screenshot('source-evidence-desktop'); await page.keyboard.press('Escape')
+    assert((await page.locator('.items-table tbody tr').count()) >= 1); await page.getByRole('button', { name: '查看原文', exact: true }).first().click(); await page.getByRole('dialog', { name: '标的来源', exact: true }).locator('.source-quote').waitFor(); const evidence = page.getByRole('dialog', { name: '标的来源', exact: true })
+    assert.equal(await evidence.locator('.evidence-fields button').count(), 7)
+    assert.equal(await evidence.locator('mark').first().innerText(), item.model)
+    await evidence.locator('.evidence-fields button').filter({ has: page.getByText('品牌', { exact: true }) }).click()
+    assert.equal(await evidence.locator('mark').first().innerText(), item.brand)
+    await evidence.locator('.evidence-fields button').filter({ has: page.getByText('规格型号', { exact: true }) }).click()
+    await screenshot('source-evidence-desktop'); await page.keyboard.press('Escape')
     await page.getByRole('spinbutton', { name: '单价（元）下限', exact: true }).fill('999999999'); await page.getByRole('button', { name: '检索', exact: true }).click(); await page.getByRole('alert').filter({ hasText: '筛选下限不能大于上限' }).waitFor()
     await page.getByRole('button', { name: '重置', exact: true }).click(); await page.getByText('1–20 / 138 条', { exact: true }).waitFor(); await page.getByRole('button', { name: '标的下一页', exact: true }).click(); await page.getByText('21–40 / 138 条', { exact: true }).waitFor()
     await page.getByRole('combobox', { name: '标的每页条数', exact: true }).selectOption('50'); await page.getByText('1–50 / 138 条', { exact: true }).waitFor(); await screenshot('items-desktop')
@@ -105,6 +120,7 @@ try {
     await page.locator(`[data-scenario-tab="${scenario}"]`).click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.getByRole('button', { name: '查询关系', exact: true }).click()
     const result = page.locator(`[data-testid="scenario-result"][data-scenario="${scenario}"]`); await result.waitFor(); await page.waitForFunction(() => document.querySelector('[data-testid=scenario-result]')?.getAttribute('data-render-ms') != null)
     assert(await result.locator('tbody tr').count() > 0); assert(Number(await result.getAttribute('data-render-ms')) < 10000)
+    assert.equal(await result.locator('.analysis-summary > div').count(), 3)
     await result.getByRole('button', { name: '图表', exact: true }).click(); assert(await result.locator('.bar-row').count() > 0)
     if (scenario !== 'purchaser-bidders') { await result.getByRole('combobox', { name: '图表比较指标', exact: true }).selectOption('amount'); assert((await result.locator('.bar-number').first().innerText()).length > 0) }
     await result.getByRole('button', { name: '表格', exact: true }).click()
@@ -112,6 +128,14 @@ try {
     if (scenario === 'purchaser-bidders') { await result.getByRole('button', { name: '共同投标组合', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'supplier-competitors') { await result.getByRole('button', { name: '全部参与方', exact: true }).click(); const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' }); const expected = await json('analytics/supplier-competitors?' + params); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length)); report.allParticipants = expected.all_participants.length; if (expected.all_participants.length > 15) { await result.getByRole('button', { name: '关系结果下一页', exact: true }).click(); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length - 15)) } }
     if (scenario === 'common-purchasers') { await result.locator('summary').first().click(); assert(await result.locator('.supplier-details dd').count() >= 2) }
+    if (scenario === 'common-projects') {
+      const expected = await json('analytics/common-projects?' + new URLSearchParams({ dataset_id: 'official-reference', suppliers: '中国电信股份有限公司广东分公司,中国移动通信集团广东有限公司' }))
+      assert((await result.locator('.analysis-summary').innerText()).includes(new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', maximumFractionDigits: 2 }).format(expected.summary.total_amount)))
+      const expansion = result.locator('.bid-expansion').first()
+      assert.equal(await expansion.getAttribute('open'), null)
+      await expansion.locator('summary').click(); assert(await expansion.locator('li').count() > 1)
+      await expansion.locator('summary').click()
+    }
     if (scenario === 'common-projects') { await result.getByRole('button', { name: '查看竞标详情', exact: true }).first().click(); const panel = page.getByRole('dialog', { name: '采购包详情', exact: true }); await panel.locator('tbody tr').first().waitFor(); assert.match(await panel.innerText(), /未中标|中标/); await page.keyboard.press('Escape'); await screenshot('common-projects-desktop') }
   })
   await check('supplier search picker, keyboard close and input invalidation', async () => {
@@ -155,6 +179,10 @@ try {
       await page.setViewportSize({ width, height })
       for (const [view, title] of [['overview', '工作台'], ['items', '标的检索'], ['import', '数据接入'], ['relations', '关系分析']]) {
         await navigate(view, title); await noOverflow(`${label}-${view}`)
+        if (label === 'mobile' && view === 'overview') {
+          const [labelBox, valueBox, noteBox] = await Promise.all(['span', 'strong', 'small'].map(tag => page.locator('.stat-amount > ' + tag).boundingBox()))
+          assert(labelBox.y + labelBox.height <= valueBox.y && valueBox.y + valueBox.height <= noteBox.y, 'Mobile amount label, value and note must not overlap')
+        }
         if (label === 'mobile' || (label === 'tablet' && view === 'overview') || (label === 'large' && view === 'overview')) await screenshot(`${view}-${label}`)
       }
       if (label === 'mobile') { await page.locator('[data-scenario-tab=common-projects]').click(); await page.getByRole('button', { name: '填入样本示例', exact: true }).click(); await page.locator('.select-trigger').click(); await noOverflow('mobile picker'); await screenshot('supplier-picker-mobile'); await page.keyboard.press('Escape') }

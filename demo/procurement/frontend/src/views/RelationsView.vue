@@ -11,7 +11,7 @@ const w = useWorkspace()
 
 <template>
   <section aria-labelledby="relations-title">
-    <div class="page-heading"><h1 id="relations-title">关系分析</h1><button class="button" :aria-expanded="w.networkOpen" aria-controls="relationship-network" @click="w.networkOpen = !w.networkOpen">{{ w.networkOpen ? '收起关系网络' : '查看关系网络' }}</button></div>
+    <div class="page-heading"><div><span class="eyebrow">RELATIONSHIP EXPLORER</span><h1 id="relations-title">关系分析</h1><p>围绕采购与投标主体，探索合作、竞争和共同参与。</p></div><button class="button" :aria-expanded="w.networkOpen" aria-controls="relationship-network" @click="w.networkOpen = !w.networkOpen">{{ w.networkOpen ? '收起关系网络' : '查看关系网络' }}</button></div>
     <section class="surface query-surface" aria-label="关系查询条件">
       <div v-tab-indicator class="tabs scenario-tabs" aria-label="关系分析场景"><button v-for="scenario in scenarios" :key="scenario.id" :data-scenario-tab="scenario.id" :class="{ active: w.scenario === scenario.id }" :aria-pressed="w.scenario === scenario.id" @click="w.scenario = scenario.id">{{ scenario.title }}</button></div>
       <div class="query-body"><h2>{{ w.scenarioDefinition.heading }}</h2><p class="muted">{{ w.scenarioDefinition.description }}</p>

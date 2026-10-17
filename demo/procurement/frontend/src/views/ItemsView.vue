@@ -14,7 +14,7 @@ const ranges = [{ title: '单价（元）', low: 'min_price', high: 'max_price' 
 
 <template>
   <section aria-labelledby="items-title">
-    <div class="page-heading"><h1 id="items-title">标的检索</h1><span class="heading-meta">{{ number(w.itemTotal) }} 条明细</span></div>
+    <div class="page-heading"><div><span class="eyebrow">ENTITY EXPLORER</span><h1 id="items-title">标的检索</h1><p>检索七类关键字段，让每一条抽取结果回到原文。</p></div><span class="heading-meta">{{ number(w.itemTotal) }} 条明细</span></div>
     <section class="surface" aria-label="标的筛选与结果">
       <form class="filter-form" @submit.prevent="w.loadItems()">
         <div class="search-row"><label class="search-field has-search-icon"><AppIcon name="magnify"></AppIcon><span class="sr-only">搜索标的</span><input v-model="w.itemSearch" type="search" placeholder="搜索标的、项目、采购单位或中标供应商" :disabled="w.datasetLoading"></label><button class="button primary" :disabled="w.itemLoading || w.datasetLoading">检索</button></div>

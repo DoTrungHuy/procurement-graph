@@ -4,13 +4,14 @@ import { lotLabel, money, number, statusName, statusTone } from '../utils/presen
 import AppIcon from '../components/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PaginationBar from '../components/PaginationBar.vue'
+import WorkspaceOverview from '../components/WorkspaceOverview.vue'
 const w = useWorkspace()
 function page(value) { w.projectPage = value; w.loadProjects(false) }
 </script>
 
 <template>
   <section aria-labelledby="overview-title">
-    <div class="page-heading"><h1 id="overview-title">工作台</h1><button class="button primary" @click="w.navigate('import')">导入数据</button></div>
+    <div class="page-heading"><div><span class="eyebrow">PROCUREMENT INTELLIGENCE</span><h1 id="overview-title">工作台</h1><p>从一份公告出发，看见采购数据背后的联系。</p></div><button class="button primary" @click="w.navigate('import')"><AppIcon name="upload" />导入数据</button></div>
     <div class="stat-strip" aria-label="当前数据概况" :aria-busy="w.datasetLoading">
       <div><span>公告</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.notices) }}</strong></div>
       <div><span>采购包</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.projects) }}</strong></div>
@@ -18,6 +19,7 @@ function page(value) { w.projectPage = value; w.loadProjects(false) }
       <div><span>投标主体</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.suppliers) }}</strong></div>
       <div class="stat-amount"><span>已披露中标金额</span><strong>{{ w.datasetLoading ? '—' : money(w.stats.total_amount) }}</strong><small v-if="w.stats.unknown_amount_count">另有 {{ w.stats.unknown_amount_count }} 个采购包金额未披露</small></div>
     </div>
+    <WorkspaceOverview />
     <section class="surface" aria-labelledby="projects-title">
       <div class="section-heading"><h2 id="projects-title">采购项目 <span class="count">{{ w.projectTotal }}</span></h2><button class="text-button" :disabled="w.datasetLoading" @click="w.loadDataset()">刷新数据</button></div>
       <form class="table-toolbar project-toolbar" @submit.prevent="w.loadProjects()">
