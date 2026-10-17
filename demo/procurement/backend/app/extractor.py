@@ -25,7 +25,7 @@ from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 from .model_transport import read_model_response
 
-PIPELINE_VERSION = 'package-v2.11'
+PIPELINE_VERSION = 'package-v2.12'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 
@@ -70,11 +70,47 @@ class DeepSeekExtractor:
         self.document_cache_writes = 0
         self.checkpoints = PieceCheckpoints(self.settings.document_cache_dir)
         self.request_gate = asyncio.Semaphore(self.settings.model_concurrency)
+        self.optimization_counts = {'blank_templates': 0, 'standard_tables': 0, 'batch_groups': 0,
+                                    'batch_documents': 0, 'batch_fallbacks': 0, 'batch_model_calls': 0}
+        self.batch_disabled_reason = ''
 
     async def close(self) -> None:
         if self.client is not None:
             await self.client.aclose()
             self.client = None
+
+    def _payload(self, text, names, system_override=None):
+        settings = self.settings
+        payload = {'model': settings.deepseek_model, 'messages': [
+            {'role': 'system', 'content': system_override or self.system_prompt},
+            {'role': 'user', 'content': user_prompt(text, names)}],
+            'response_format': {'type': 'json_object'}, 'temperature': 0.1,
+            'max_tokens': settings.model_max_tokens, 'stream': False}
+        if settings.deepseek_model.startswith('deepseek-'):
+            payload['thinking'] = {'type': 'enabled' if settings.model_thinking else 'disabled'}
+        return payload
+
+    def _chunk_prefix(self, text, prefix, legacy, names, label):
+        mode = self.settings.model_replay_chunking
+        if not self.cache_only or mode == 'current':
+            return prefix
+        if mode != 'auto' or self.settings.extraction_strategy == 'rag':
+            return legacy
+        directories = [Path(self.settings.model_cache_dir),
+                       *(Path(p) for p in self.settings.model_cache_read_dirs), ROOT / 'data/demo/cache']
+        # Select an exact saved request partition, never an old prompt or a
+        # previously exported prediction. Mixed historical runs can use both.
+        def present(part):
+            for source, source_names in ((prefix, [label]), (legacy, names)):
+                payload = self._payload(source + part, source_names)
+                key = hashlib.sha256((self.settings.deepseek_base_url + json.dumps(payload, sort_keys=True, ensure_ascii=False)).encode()).hexdigest() + '.json'
+                if any((directory / key).is_file() for directory in directories):
+                    return True
+            return False
+        for candidate in dict.fromkeys([prefix, legacy]):
+            if all(present(part) for part in chunk_text(text, max(128, self.settings.max_llm_chars - len(candidate)))):
+                return candidate
+        return prefix
 
     def _document_key(self, text: str, prefix: str, chunk_prefix: str, names: list[str]) -> str | None:
         if self.checkpoints.directory is None:
@@ -87,6 +123,8 @@ class DeepSeekExtractor:
                     'chunk_prefix': chunk_prefix, 'max_chars': settings.max_llm_chars,
                     'source': hashlib.sha256(text.encode()).hexdigest(),
                     'require_free': settings.model_require_free,
+                    'optimizations': [settings.extract_blank_templates, settings.extract_standard_tables,
+                                      settings.extract_batch_attachments],
                     'legacy_names': names if self.cache_only else []}
         if settings.extraction_strategy == 'rag':
             from .retrieval import KNOWLEDGE
@@ -96,9 +134,11 @@ class DeepSeekExtractor:
                 return None
         return digest(identity)
 
-    async def _call(self, text: str, names: list[str]) -> ProjectExtract:
+    async def _call(self, text: str, names: list[str], *, decoder=None, system_override: str | None = None,
+                    cache_only_override: bool | None = None):
         settings = self.settings
-        if not self.api_key and not self.cache_only:
+        cache_only = self.cache_only if cache_only_override is None else cache_only_override
+        if not self.api_key and not cache_only:
             raise RuntimeError('未配置抽取模型')
         if self.fatal_error:
             raise FatalModelError(self.fatal_error)
@@ -108,18 +148,15 @@ class DeepSeekExtractor:
             prompt_text, knowledge_ids, knowledge_hash = augment(text)
             if _usage.get() is not None:
                 _usage.get().setdefault('retrieval', []).append({'knowledge_ids':knowledge_ids,'sha256':knowledge_hash})
-        payload = {'model':settings.deepseek_model,'messages':[
-            {'role':'system','content':self.system_prompt},{'role':'user','content':user_prompt(prompt_text,names)}],
-            'response_format':{'type':'json_object'},'temperature':0.1,'max_tokens':settings.model_max_tokens,'stream':False}
-        if settings.deepseek_model.startswith('deepseek-'):
-            payload['thinking'] = {'type': 'enabled' if settings.model_thinking else 'disabled'}
+        payload = self._payload(prompt_text, names, system_override)
         cache = None
         cached = None
         cached_path = None
         if settings.model_cache_dir:
             directory = Path(settings.model_cache_dir).resolve()
             cache = directory / (hashlib.sha256((settings.deepseek_base_url + json.dumps(payload, sort_keys=True, ensure_ascii=False)).encode()).hexdigest() + '.json')
-            directories = list(dict.fromkeys([directory,ROOT/'data/demo/cache']))
+            directories = list(dict.fromkeys([directory, *(Path(p).resolve() for p in settings.model_cache_read_dirs),
+                                              ROOT/'data/demo/cache']))
             for location in directories:
                 candidate = location/cache.name
                 if candidate.is_file():
@@ -160,7 +197,7 @@ class DeepSeekExtractor:
                     if usage is not None:
                         usage['response_cache_hits'] += 1
                 else:
-                    if self.cache_only:
+                    if cache_only:
                         raise FatalModelError('历史响应缓存未命中当前规则，请使用模型抽取重新生成结果；回放模式禁止联网，未产生模型请求')
                     if not settings.model_network_enabled:
                         raise FatalModelError('模型网络调用已暂停；请先确定样本与预算，再明确启用 MODEL_NETWORK_ENABLED')
@@ -168,9 +205,16 @@ class DeepSeekExtractor:
                         loopback = httpx.URL(settings.deepseek_base_url).host in {'127.0.0.1', 'localhost', '::1'}
                         self.client = httpx.AsyncClient(timeout=httpx.Timeout(180,connect=20), trust_env=not loopback)
                     async with self.request_gate:
+                        if self.fatal_error:
+                            raise FatalModelError(self.fatal_error)
                         self.calls += 1
+                        if decoder is not None:
+                            self.optimization_counts['batch_model_calls'] += 1
                         if usage is not None:
                             usage['requests'] += 1
+                            if decoder is not None:
+                                usage.setdefault('optimization_counts', {}).setdefault('batch_model_calls', 0)
+                                usage['optimization_counts']['batch_model_calls'] += 1
                         response = await self.client.post(settings.deepseek_base_url+'/chat/completions',
                             headers={'Authorization':'Bearer '+self.api_key},json=payload)
                     if response.status_code in {429,500,502,503,504}:
@@ -216,6 +260,8 @@ class DeepSeekExtractor:
                 if choice.get('finish_reason') == 'length':
                     raise OutputTruncated('模型输出达到上限，需要缩短文本重新提取')
                 content = choice['message']['content']
+                if decoder is not None:
+                    return decoder(content)
                 data = json.loads(content)
                 data['extraction_method'] = f'model:{settings.deepseek_model}'
                 return ProjectExtract.model_validate(data)
@@ -239,6 +285,7 @@ class DeepSeekExtractor:
                  'response_cache_hits': 0,
                  'historical_context_cache_hits': 0, 'cache_only': self.cache_only,
                  'document_cache_hits': 0, 'document_cache_writes': 0,
+                 'optimization_counts': {},
                  'documents': [],
                  'response_models': [], 'parse_seconds': 0.0, 'model_seconds': 0.0}
         token = _usage.set(usage)
@@ -265,6 +312,13 @@ class DeepSeekExtractor:
             return results
 
     async def _extract_files(self, files: list[Path]) -> ProjectExtract:
+        if any((self.settings.extract_blank_templates, self.settings.extract_standard_tables,
+                self.settings.extract_batch_attachments)):
+            from .extraction_plan import extract_documents
+            return await extract_documents(self, files, _usage.get())
+        return await self._extract_files_original(files)
+
+    async def _extract_files_original(self, files: list[Path]) -> ProjectExtract:
         settings = self.settings
         results = []
         errors = []
@@ -305,7 +359,7 @@ class DeepSeekExtractor:
             legacy_prefix = (f'[FILE:{names[index]} SOURCE:{source}]\n'
                       f'[上下文，仅用于理解字段，不重复抽取；采购包必须由当前段落证明]\n公告：{announcement_context}\n文件开头：{text[:1200]}\n[当前段落]\n')
             _replay_context.set({'prefix':prefix,'legacy_prefix':legacy_prefix,'names':names})
-            chunk_prefix = legacy_prefix if self.cache_only else prefix
+            chunk_prefix = self._chunk_prefix(text, prefix, legacy_prefix, names, names[index])
             # Checkpoints follow current grounding rules, the entire source,
             # announcement context and exact chunking. Never use an old final
             # result to bypass a changed prompt, source, model or RAG corpus.

@@ -129,6 +129,7 @@ async def process_job(job_id: str, uploads: list[Path] | None=None, workdir: Pat
         pipeline = PIPELINE_VERSION+PARSER_VERSION+hashlib.sha256(extractor.system_prompt.encode()).hexdigest()+json.dumps({
             'model':model_settings.deepseek_model,'base_url':model_settings.deepseek_base_url,'model_enabled':bool(extractor.api_key),
             'max_chars':settings.max_llm_chars,'pdf_pages':settings.max_pdf_pages,
+            'optimizations':[settings.extract_blank_templates, settings.extract_standard_tables, settings.extract_batch_attachments],
             'max_tokens':model_settings.model_max_tokens,'thinking':model_settings.model_thinking},sort_keys=True)
         if model_settings.extraction_strategy == 'rag':
             from .retrieval import KNOWLEDGE
@@ -221,6 +222,8 @@ async def process_job(job_id: str, uploads: list[Path] | None=None, workdir: Pat
                 'response_cache_hits': extractor.response_cache_hits,
                 'document_cache_hits': extractor.document_cache_hits,
                 'document_cache_writes': extractor.document_cache_writes,
+                'optimization_counts': extractor.optimization_counts,
+                'batch_disabled_reason': extractor.batch_disabled_reason,
                 'model_concurrency': model_settings.model_concurrency,
                 'parse_concurrency': settings.parse_concurrency,
                 'notice_concurrency': settings.notice_concurrency or min(8, settings.model_concurrency + settings.parse_concurrency),
