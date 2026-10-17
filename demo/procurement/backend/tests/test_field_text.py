@@ -17,6 +17,7 @@ from app.models import ItemExtract, LotExtract, ProjectExtract
 @pytest.mark.parametrize('text', [
     '详见投标文件', '见附件', '具体见报价表', '详见附件1《型号清单》', '详见附件3供货范围明细表',
     '满足招标文件要求，详见投标文件“三、分项报价表”', '按招标文件执行',
+    '满足本项目磋商文件要求', '符合本次招标文件要求', '按该项目采购文件执行',
 ])
 def test_pure_reference_is_missing_value_with_an_explicit_reason(text):
     observed = interpret_field_text(text, 'brand')

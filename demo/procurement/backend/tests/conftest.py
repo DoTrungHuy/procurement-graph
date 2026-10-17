@@ -13,6 +13,10 @@ os.environ['NEO4J_URI'] = ''
 os.environ['APP_API_TOKEN'] = ''
 os.environ['PARSE_CACHE_DIR'] = ''
 os.environ['MODEL_RESPONSE_CACHE_DIR'] = ''
+os.environ['MODEL_DOCUMENT_CACHE_DIR'] = ''
+os.environ['EXTRACT_BLANK_TEMPLATES'] = 'false'
+os.environ['EXTRACT_STANDARD_TABLES'] = 'false'
+os.environ['EXTRACT_BATCH_ATTACHMENTS'] = 'false'
 os.environ['MODEL_SETTINGS_PATH'] = str(TEST_ROOT/'unused-model-settings.local.json')
 # Live credentials are absent; model tests use an explicit MockTransport.
 os.environ['MODEL_NETWORK_ENABLED'] = 'true'

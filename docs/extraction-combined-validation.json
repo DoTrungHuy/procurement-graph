@@ -1,0 +1,121 @@
+{
+  "scope": "1038-notice local comparison with per-notice provenance. Same saved single responses and zero-credit protected live probes/cache-miss recovery. Not cold full inference timing or official accuracy.",
+  "baseline_unchanged": true,
+  "counts": {
+    "frozen_baseline": {
+      "notices": 1038,
+      "packages": 2236,
+      "items": 21750,
+      "bids": 6544
+    },
+    "same_code_control": {
+      "notices": 1038,
+      "packages": 2236,
+      "items": 21754,
+      "bids": 6544
+    },
+    "combined_candidate": {
+      "notices": 1038,
+      "packages": 2236,
+      "items": 21719,
+      "bids": 6542
+    }
+  },
+  "usage": {
+    "control": {
+      "actual_processing_status": {
+        "complete": 789,
+        "partial": 249
+      },
+      "response_operations": {
+        "requests": 2,
+        "response_cache_hits": 11662,
+        "document_cache_hits": 0,
+        "document_cache_writes": 11547
+      },
+      "optimization_counts": {}
+    },
+    "candidate": {
+      "actual_processing_status": {
+        "complete": 789,
+        "partial": 249
+      },
+      "response_operations": {
+        "requests": 1,
+        "response_cache_hits": 10213,
+        "document_cache_hits": 0,
+        "document_cache_writes": 10099
+      },
+      "optimization_counts": {
+        "blank_templates": 1448,
+        "batch_groups": 30,
+        "batch_model_calls": 1,
+        "batch_fallbacks": 30
+      }
+    }
+  },
+  "response_operations_before": 11664,
+  "response_operations_after": 10214,
+  "response_operation_reduction_percent": 12.431,
+  "all_other_seven_fields_and_sources_preserved": true,
+  "defaults": {
+    "blank_templates": true,
+    "standard_tables": true,
+    "batch_attachments": false
+  },
+  "tests": {
+    "backend_passed": 470,
+    "warnings": 46
+  },
+  "incremental_changes": {
+    "items_retained_exactly": 21717,
+    "items_removed_or_changed": 37,
+    "items_added_or_changed": 2,
+    "bids_retained_exactly": 6542,
+    "bids_removed_or_changed": 2,
+    "bids_added_or_changed": 0
+  },
+  "removed_blank_source_records": {
+    "items": 35,
+    "bids": 2
+  },
+  "supplier_refinements": 2,
+  "preexisting_branch_changed_notices": 7,
+  "source_sha256": {
+    "demo/procurement/backend/app/acceptance.py": "59fc9e870587e081c3b1b5c5853b447094ba00cf5f607e82ea6111853f5c684c",
+    "demo/procurement/backend/app/analytics.py": "842bfaca701be823325fca22323b3f0ac51fc2e9c3356bda71936e37d50746ad",
+    "demo/procurement/backend/app/batch.py": "571b77b4a4249ba35f2afa99416c2213a56e8cc32f93875e466e571ae78e4b74",
+    "demo/procurement/backend/app/blank_templates.py": "a4f3fd8a39345ddfe2fa73c89ff339143a3885a4a53dc50bcee6a1cce26adc7d",
+    "demo/procurement/backend/app/checkpoints.py": "4b87f514dbd663620493bc449415ff2b8bef7dd5ad94c0a032b9c7e2136fff4e",
+    "demo/procurement/backend/app/config.py": "db1ffa7faa4c35745e1f80c6b2e7f51c52bfc81fca153b1ea577074535507dd5",
+    "demo/procurement/backend/app/database.py": "e0ba47e29b858d4101e5d4dec6d17738c0bf3ec36b33a0361b301900d345bf44",
+    "demo/procurement/backend/app/document_batching.py": "d7813b0c62d154f4873768fb0d1906cfb801671800d7d2247193cc1381ce6cf8",
+    "demo/procurement/backend/app/document_policy.py": "48530765bc140cf0939279c9fb9c35dc9cfb3e5686c86e7512390aa26596863e",
+    "demo/procurement/backend/app/evaluate.py": "e3bbc00774e3910e6de615c639f175c0f38196bba2cc2c9d13bdcf8bc45ebbc6",
+    "demo/procurement/backend/app/evidence.py": "ecdab077ef1afe50c3192ba38272365f135fa2ab507cb21e079601a821ddfb87",
+    "demo/procurement/backend/app/exports.py": "1ae91d04818a4e7a5d4256ba0245cc984b9ea360b1d5bcfc644531b6c05d9925",
+    "demo/procurement/backend/app/extraction_plan.py": "c8060b8dac4256a19bfc575914897082b4a6fcf982175ffaaf5148dbe903190d",
+    "demo/procurement/backend/app/extractor.py": "a60c44f9cecb601d35c4f438b7de44424ed10ebdc87187fe664cd1a735362458",
+    "demo/procurement/backend/app/field_text.py": "df6bfd88f3581857ac8b669b54e2e57817ffc7191004d2ff3205722642c66bda",
+    "demo/procurement/backend/app/graph_cli.py": "e98221680482f3f06e7def2999a7335bbb802aa9bafdc1fd0776899ea5c8108b",
+    "demo/procurement/backend/app/graph_store.py": "783462756b32b1f17311489f1333ec0d3202ee708704b09f882fd49192eb01ef",
+    "demo/procurement/backend/app/ingestion.py": "d144823ce805cabd64043b4b85bbdb23c49ca4e5b033df7c313719ac615155a0",
+    "demo/procurement/backend/app/item_hierarchy.py": "43b405eb26c2f3401b5cab21c82dd744f254ef34f13798c54e0594e60115cd1b",
+    "demo/procurement/backend/app/jobs.py": "d092cec69c3c6293eeb22ef249ecae9ecf3a610e40d9d089ca44dd144d74164b",
+    "demo/procurement/backend/app/main.py": "96365fb4a8df0b9e630cb97c26be334b8127acb1952cf5de388641eb1b49097b",
+    "demo/procurement/backend/app/models.py": "a5a2662c57c9b681b850ee1d1540ac5fbe8e1824d2008f31bd3a1dca3f9a7a5b",
+    "demo/procurement/backend/app/model_settings.py": "a15cde0decf56906c376c5303b052f57c9b854de9177564955c4a18f99b4a6d2",
+    "demo/procurement/backend/app/model_transport.py": "19a423c1ce21fe75931506a3124a8a1cb2e6a2f478c203854c4309f9c41b042d",
+    "demo/procurement/backend/app/neo4j_sync.py": "e172a25d8f436dc7719c302164444f513492e926357fc56afd58c728c780e896",
+    "demo/procurement/backend/app/normalization.py": "772a32aa64acaa2c58fa183d0d648826700975f46495b8d39accdd695ac8080a",
+    "demo/procurement/backend/app/ocr.py": "0d65cc6fdd004e8ff0e6c1b800dd9dea73ac062a0aa88ef8f56dd3994b59370e",
+    "demo/procurement/backend/app/parsers.py": "9ae305c417a7ad38bf3b7c9618971d9d8e48e03a42c2e79c1307b73a528b247c",
+    "demo/procurement/backend/app/prompts.py": "bb8de210a056e1455915d689cfad5cecd8e2d691b48199678b461af399784e13",
+    "demo/procurement/backend/app/reconciliation.py": "c7520651699748be0d8e6b77c4019af44f8ac9ff52583726bc710c28ff9837b5",
+    "demo/procurement/backend/app/retrieval.py": "78c73b41b6dee1142c9fdcfaf7d34d24ec92931e292617e17049e83b068b38b7",
+    "demo/procurement/backend/app/seed.py": "35036a08154c39ee4660a6f78e4e2cf8e927d9c34e9b4d6edd70ef2994ee8602",
+    "demo/procurement/backend/app/table_extract.py": "c9d66ed87e5eeea261188752b10804130149db5c6c8687c1b9ea6bb7df98f447",
+    "demo/procurement/backend/app/__init__.py": "665fdc47b01a156efbddac83021e724632aedbaca95d907a9528dc2dccb39dc1"
+  },
+  "comparison_sha256": "dd7c0cb7d74ff44b07ded15c9c481e23dcccea3d9f2462c5a73390c2129c06d5"
+}

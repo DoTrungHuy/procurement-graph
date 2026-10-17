@@ -122,10 +122,14 @@ async def process_job(job_id: str, uploads: list[Path] | None=None, workdir: Pat
             raise ValueError('输入包含重复公告标识，无法可靠保存批次快照；请分开处理不同版本')
         with connect() as c:
             c.execute('UPDATE jobs SET total=?,errors=? WHERE id=?',(len(groups),json.dumps(discovery_errors[:200],ensure_ascii=False),job_id))
-        gate = asyncio.Semaphore(settings.model_concurrency)
+        # Parsing and model requests have separate bounds. A slow attachment
+        # must not occupy the only notice slot able to issue a model request.
+        notice_limit = settings.notice_concurrency or min(8, settings.model_concurrency + settings.parse_concurrency)
+        gate = asyncio.Semaphore(notice_limit)
         pipeline = PIPELINE_VERSION+PARSER_VERSION+hashlib.sha256(extractor.system_prompt.encode()).hexdigest()+json.dumps({
             'model':model_settings.deepseek_model,'base_url':model_settings.deepseek_base_url,'model_enabled':bool(extractor.api_key),
             'max_chars':settings.max_llm_chars,'pdf_pages':settings.max_pdf_pages,
+            'optimizations':[settings.extract_blank_templates, settings.extract_standard_tables, settings.extract_batch_attachments],
             'max_tokens':model_settings.model_max_tokens,'thinking':model_settings.model_thinking},sort_keys=True)
         if model_settings.extraction_strategy == 'rag':
             from .retrieval import KNOWLEDGE
@@ -216,6 +220,13 @@ async def process_job(job_id: str, uploads: list[Path] | None=None, workdir: Pat
                 'model_calls': extractor.calls, 'token_usage': extractor.total_usage,
                 'cache_only':record['mode']=='replay',
                 'response_cache_hits': extractor.response_cache_hits,
+                'document_cache_hits': extractor.document_cache_hits,
+                'document_cache_writes': extractor.document_cache_writes,
+                'optimization_counts': extractor.optimization_counts,
+                'batch_disabled_reason': extractor.batch_disabled_reason,
+                'model_concurrency': model_settings.model_concurrency,
+                'parse_concurrency': settings.parse_concurrency,
+                'notice_concurrency': settings.notice_concurrency or min(8, settings.model_concurrency + settings.parse_concurrency),
                 'response_cache_keys': sorted(extractor.response_cache_keys),
                 'requested_model': model_settings.deepseek_model, 'thinking': model_settings.model_thinking,
                 'pipeline_version': PIPELINE_VERSION,
