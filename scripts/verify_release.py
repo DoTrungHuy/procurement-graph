@@ -69,14 +69,19 @@ with TestClient(app) as client:
     assert stats['notices']==20 and stats['projects']==26,stats
     created=client.post('/api/samples/replay',json={'dataset_id':'release-check'}).json()
     job=client.get('/api/jobs/'+created['id']).json()
-    assert job['finished'] and job['failed']==0 and job['metrics']['model_calls']==0,job
-    exported=client.get('/api/export/standard.xlsx',params={'dataset_id':'release-check'})
+    assert job['finished'] and job['failed']==20 and job['metrics']['model_calls']==0,job
+    assert job['metrics']['response_cache_hits']==0,job
+    assert all('未命中当前规则' in error for error in job['errors']),job
+    assert client.get('/api/stats',params={'dataset_id':'release-check'}).json()['notices']==0
+    exported=client.get('/api/export/standard.xlsx',params={'dataset_id':'official-reference'})
     assert exported.headers['content-disposition']=='attachment; filename=procurement-tables.xlsx'
     workbook=exported.content
     names=load_workbook(io.BytesIO(workbook),read_only=True).sheetnames
     assert names==['总表','标的表','投标人表'],names
     print(json.dumps({'passed':True,'application_version':health['version'],'notices':20,'packages':26,'cache_hits':job['metrics']['response_cache_hits'],
-                      'model_requests':0,'workbook_bytes':len(workbook),'database':'fresh','official_input':'absent'}))
+                      'model_requests':0,'workbook_bytes':len(workbook),'database':'fresh','official_input':'absent',
+                      'data_source':'bundled historical snapshot, not current-rule extraction',
+                      'stale_replay_rejected':True}))
 '''
         completed=subprocess.run([sys.executable,'-X','utf8','-c',program],cwd=ROOT,env=env,capture_output=True,text=True,encoding='utf-8')
         if completed.returncode:

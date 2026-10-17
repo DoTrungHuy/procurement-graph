@@ -22,7 +22,7 @@ from .reconciliation import reconcile_items
 from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 
-PIPELINE_VERSION = 'package-v2.9'
+PIPELINE_VERSION = 'package-v2.10'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 

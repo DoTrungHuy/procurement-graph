@@ -8,20 +8,26 @@ from decimal import Decimal, InvalidOperation
 import json
 import time
 import tempfile
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import settings
 from .evidence import canonical_location
-from .extractor import DeepSeekExtractor
+from .extractor import DeepSeekExtractor, PIPELINE_VERSION
 from .models import ProjectExtract
 from .normalization import dedupe_key, lot_identity
 from .parsers import expand_archives
+from .field_text import BUSINESS_TEXT_POLICY, TEXT_FIELDS, interpret_field_text
 
 FIELDS = ['product_name','category','brand','model','unit_price','quantity','total_price']
 NUMERIC = {'unit_price','quantity','total_price','bid_amount','awarded_amount'}
+FIELD_POLICIES = ('literal-v1', BUSINESS_TEXT_POLICY)
 
 
-def value_key(value, field=''):
+def value_key(value, field='', field_policy='literal-v1'):
+    if field_policy == BUSINESS_TEXT_POLICY and field in TEXT_FIELDS:
+        value = interpret_field_text(value, field).value
     if value is None or value == '':
         return ''
     if field in NUMERIC or isinstance(value,(int,float,Decimal)):
@@ -63,13 +69,13 @@ def _assign(weights):
     return [(p[j]-1,j-1) for j in range(1,size+1) if 0<p[j]<=n and j<=m and weights[p[j]-1][j-1]>0]
 
 
-def _row_weight(expected,actual):
+def _row_weight(expected,actual,field_policy='literal-v1'):
     if lot_identity(expected.get('lot_name', '')) != lot_identity(actual.get('lot_name', '')):
         return 0
     if expected.get('line_id') and actual.get('line_id'):
         return 1000 if (canonical_location(expected['line_id']) or expected['line_id'],expected.get('source_file','')) == (canonical_location(actual['line_id']) or actual['line_id'],actual.get('source_file','')) else 0
-    names = [value_key(x.get('product_name')) for x in (expected,actual)]
-    models = [value_key(x.get('model')) for x in (expected,actual)]
+    names = [value_key(x.get('product_name'),'product_name',field_policy) for x in (expected,actual)]
+    models = [value_key(x.get('model'),'model',field_policy) for x in (expected,actual)]
     if all(names) and names[0]!=names[1]:
         return 0
     if names[0] and names[0]==names[1]:
@@ -90,23 +96,35 @@ def _metrics(count):
             'cell_accuracy':round((tp+tn)/denominator,6) if denominator else 0}
 
 
-def score_items(expected: list[dict], actual: list[dict]) -> dict:
+def score_items(expected: list[dict], actual: list[dict], field_policy: str='literal-v1') -> dict:
+    if field_policy not in FIELD_POLICIES:
+        raise ValueError(f'Unknown field policy: {field_policy}')
     counts = {f:{'tp':0,'fp':0,'fn':0,'tn':0,'wrong_value':0} for f in FIELDS}
     warnings = []
     for label,records in [('gold',expected),('prediction',actual)]:
         identities = Counter((r.get('lot_name',''),r.get('product_name',''),r.get('model','')) for r in records if not r.get('line_id'))
         if any(n>1 for n in identities.values()):
             warnings.append(f'{label}: 重复标的缺少源行ID，同名行的对应关系有歧义；请补充line_id/source_file')
-    matches = _assign([[_row_weight(a,b) for b in actual] for a in expected]) if expected and actual else []
+    matches = _assign([[_row_weight(a,b,field_policy) for b in actual] for a in expected]) if expected and actual else []
     matched_gold,matched_pred = {a for a,b in matches},{b for a,b in matches}
     pairs = [(expected[a],actual[b]) for a,b in matches]
     pairs += [(r,None) for a,r in enumerate(expected) if a not in matched_gold]
     pairs += [(None,r) for b,r in enumerate(actual) if b not in matched_pred]
     errors = []
+    normalizations = []
+    if field_policy == BUSINESS_TEXT_POLICY:
+        for side, records in [('reference',expected),('prediction',actual)]:
+            for index, record in enumerate(records):
+                for field in sorted(TEXT_FIELDS):
+                    observed = interpret_field_text(record.get(field), field)
+                    if observed.raw != observed.value or observed.status == 'mixed_reference':
+                        normalizations.append({'side':side,'row':index,'field':field,'raw':observed.raw,
+                            'value':observed.value,'status':observed.status,'source_file':record.get('source_file',''),
+                            'location':record.get('line_id','')})
     for gold,predicted in pairs:
         for field in FIELDS:
-            e = value_key(gold.get(field),field) if gold is not None else ''
-            a = value_key(predicted.get(field),field) if predicted is not None else ''
+            e = value_key(gold.get(field),field,field_policy) if gold is not None else ''
+            a = value_key(predicted.get(field),field,field_policy) if predicted is not None else ''
             if e and a and e==a: counts[field]['tp'] += 1
             elif e and a:
                 counts[field]['fp'] += 1; counts[field]['fn'] += 1; counts[field]['wrong_value'] += 1
@@ -121,7 +139,8 @@ def score_items(expected: list[dict], actual: list[dict]) -> dict:
             # Unmatched blank slots do not inflate true negatives.
     total = {k:sum(c[k] for c in counts.values()) for k in next(iter(counts.values()))}
     return {'fields':{f:_metrics(c) for f,c in counts.items()},'micro':_metrics(total),
-            'matched_rows':len(matches),'missing_rows':len(expected)-len(matches),'extra_rows':len(actual)-len(matches),'warnings':warnings,'cell_errors':errors}
+            'matched_rows':len(matches),'missing_rows':len(expected)-len(matches),'extra_rows':len(actual)-len(matches),
+            'warnings':warnings,'cell_errors':errors,'field_normalizations':normalizations}
 
 
 def _items(record):
@@ -147,9 +166,14 @@ def labelled_rows(record, actual):
     return kept, excluded
 
 
-async def evaluate(gold_path: Path,predictions_path: Path | None=None,run_model: bool=False,labelled_tables_only: bool=False) -> dict:
-    gold = [json.loads(line) for line in gold_path.read_text('utf-8-sig').splitlines() if line.strip()]
-    predictions = [json.loads(line) for line in predictions_path.read_text('utf-8-sig').splitlines() if line.strip()] if predictions_path else None
+async def evaluate(gold_path: Path,predictions_path: Path | None=None,run_model: bool=False,
+                   labelled_tables_only: bool=False,field_policy: str='literal-v1') -> dict:
+    if field_policy not in FIELD_POLICIES:
+        raise ValueError(f'Unknown field policy: {field_policy}')
+    gold_bytes = gold_path.read_bytes()
+    predictions_bytes = predictions_path.read_bytes() if predictions_path else None
+    gold = [json.loads(line) for line in gold_bytes.decode('utf-8-sig').splitlines() if line.strip()]
+    predictions = [json.loads(line) for line in predictions_bytes.decode('utf-8-sig').splitlines() if line.strip()] if predictions_bytes is not None else None
     if predictions is None and not run_model:
         raise ValueError('请提供--predictions；只有明确指定--run-model才调用模型')
     ids = [record.get('notice_uuid', '') for record in gold]
@@ -192,19 +216,32 @@ async def evaluate(gold_path: Path,predictions_path: Path | None=None,run_model:
             excluded = []
             if labelled_tables_only:
                 actual, excluded = labelled_rows(record,actual)
-            report = score_items(_items(record),actual)
+            report = score_items(_items(record),actual,field_policy)
             for f in FIELDS:
                 for k in counts[f]: counts[f][k] += report['fields'][f][k]
             diagnostics.append({'record':index,'notice_uuid':record.get('notice_uuid',''),
                                 'unlabelled_table_rows':len(excluded),
                                 'unlocatable_excluded_rows':sum(not canonical_location(i.get('line_id','')) for i in excluded),
-                                **{k:report[k] for k in ('matched_rows','missing_rows','extra_rows','warnings','cell_errors')}})
+                                **{k:report[k] for k in ('matched_rows','missing_rows','extra_rows','warnings','cell_errors','field_normalizations')}})
     finally:
         if extractor: await extractor.close()
     total = {k:sum(c[k] for c in counts.values()) for k in next(iter(counts.values()))}
     micro = _metrics(total)
     micro['local_weighted_indicator'] = round(.4*micro['cell_accuracy']+.3*micro['precision']+.3*micro['recall'],6)
-    return {'evaluator':'local-row-aligned-v2','official_score':False,'records':len(gold),
+    source = Path(__file__).parent
+    provenance = {'evaluated_at':datetime.now(timezone.utc).isoformat(),
+                  'gold_sha256':hashlib.sha256(gold_bytes).hexdigest(),
+                  'predictions_sha256':hashlib.sha256(predictions_bytes).hexdigest() if predictions_bytes is not None else None,
+                  'prediction_source':'live-model' if predictions is None else 'saved-predictions',
+                  'requested_model':extractor.settings.deepseek_model if extractor else None,
+                  'pipeline_version':PIPELINE_VERSION,
+                  'scorer_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                  'field_policy_sha256':hashlib.sha256((source/'field_text.py').read_bytes()).hexdigest(),
+                  'labelled_tables_only':labelled_tables_only}
+    return {'evaluator':'local-row-aligned-v3','official_score':False,'records':len(gold),
+            'field_policy':field_policy,'provenance':provenance,
+            'field_policy_definition':('保留原文作证据；纯指引/缺失文本不作为具体字段值；正确留空计TN，真实值遗漏仍计FN，编造具体值计FP；不豁免缺行或附件漏提取'
+                                       if field_policy==BUSINESS_TEXT_POLICY else '按原文文本和数值比较；保持历史字面口径，不进行业务字段清洗'),
             'reference_scope':'labelled-standard-goods-tables' if labelled_tables_only else 'all-predicted-rows-vs-reference',
             'reference_status':'local-source-reference-not-official-gold',
             'scope_limit':'部分标注只评价已标注表格，未标注及无法定位的多余行不判对错；缺失的参考行仍计FN。必须同时审阅排除行数量。' if labelled_tables_only else '',
@@ -224,9 +261,11 @@ if __name__=='__main__':
     parser.add_argument('--predictions',type=Path)
     parser.add_argument('--run-model',action='store_true')
     parser.add_argument('--labelled-tables-only',action='store_true',help='Score only source tables that the partial reference actually labels')
+    parser.add_argument('--field-policy',choices=FIELD_POLICIES,default='literal-v1',
+                        help='literal-v1 preserves historical scoring; business-v1 explicitly interprets disclosed text')
     parser.add_argument('--output',type=Path)
     args = parser.parse_args()
-    report = asyncio.run(evaluate(args.gold,args.predictions,args.run_model,args.labelled_tables_only))
+    report = asyncio.run(evaluate(args.gold,args.predictions,args.run_model,args.labelled_tables_only,args.field_policy))
     output = json.dumps(report,ensure_ascii=False,indent=2)
     if args.output: args.output.write_text(output,encoding='utf-8')
     print(output)

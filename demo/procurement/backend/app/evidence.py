@@ -10,9 +10,14 @@ import re
 from .models import ProjectExtract
 from .normalization import dedupe_key, lot_identity, normalize_org
 from .item_hierarchy import make_context
+from .field_text import BUSINESS_TEXT_POLICY, TEXT_STATUS_NOTES, interpret_field_text
 
 LOCATION = re.compile(r'\[?((?:TABLE:\s*\d+\s+ROW:\s*\d+|SHEET:[^\]\n]+?\s+ROW:\s*\d+)(?:\s+ITEM:\s*\d+)?|PAGE:\s*\d+\s+LINE:\s*\d+|IMAGE:\s*\d+\s+LINE:\s*\d+)\]?', re.I)
 PACKAGE = re.compile(r'^(?:(?:合同包|采购包|包组|标包|标段|包)\s*[（(]?[0-9A-Za-z一二三四五六七八九十百零〇两]+|第?[0-9A-Za-z一二三四五六七八九十百零〇两]+(?:标段|标包|包))')
+_HEADERS = {'品牌': 'brand', '货物品牌': 'brand', '品牌(产品供应商)': 'brand',
+            '规格型号': 'model', '规格/型号': 'model', '货物型号': 'model',
+            '品目': 'category', '品目名称': 'category', '采购标的': 'product_name',
+            '货物名称': 'product_name', '产品服务名称': 'product_name'}
 
 
 def canonical_location(value: str) -> str:
@@ -28,12 +33,22 @@ def ground_evidence(result: ProjectExtract, text: str) -> None:
     current_span = None
     labels = []
     package = ''
+    headers = {}
+    source_fields = {}
     for line in text.splitlines():
         line = line.strip()
         location = canonical_location(line)
         if location:
             rows[location] = (line, package)
             body = LOCATION.sub('',line).strip()
+            table = location.split(' ROW:', 1)[0] if location.startswith(('TABLE:', 'SHEET:')) else ''
+            cells = [cell.strip() for cell in body.split('|')]
+            names = [re.sub(r'\s+', '', cell).replace('（', '(').replace('）', ')') for cell in cells]
+            identified = {index: _HEADERS[name] for index, name in enumerate(names) if name in _HEADERS}
+            if table and len(identified) >= 2 and len(set(identified.values())) == len(identified):
+                headers[table] = (len(cells), identified)
+            elif table in headers and len(cells) == headers[table][0]:
+                source_fields[location] = {field: cells[index] for index, field in headers[table][1].items()}
             code = re.match(r'^(\d+(?:-\d+)+)(?=\s|\||$)',body)
             if location.startswith(('PAGE:', 'IMAGE:')) and code:
                 current_span = {'code':code.group(1),'locations':[],'text':[]}
@@ -62,6 +77,7 @@ def ground_evidence(result: ProjectExtract, text: str) -> None:
         for item in lot.items:
             # Model-supplied context is never accepted as a verified excerpt.
             item.source_context = {}
+            item.field_observations = {}
             proposed = canonical_location(item.line_id)
             if proposed not in rows or not matches(item, rows[proposed][0]):
                 candidates = [location for location, (line, _) in rows.items() if matches(item, line)]
@@ -98,6 +114,19 @@ def ground_evidence(result: ProjectExtract, text: str) -> None:
                         item.source_location = span['locations'][0]+' to '+span['locations'][-1]
             if proposed:
                 item.source_context = make_context(item.source_file, item.source_location, rows[proposed][0])
+                if item.source_context:
+                    for field, raw in source_fields.get(proposed, {}).items():
+                        observed = interpret_field_text(raw, field)
+                        if observed.status in {'reference_only', 'not_disclosed', 'mixed_reference', 'disclosed_with_reference'}:
+                            item.field_observations[field] = {
+                                'raw': raw, 'status': observed.status, 'interpreted_value': observed.value,
+                                'reason': TEXT_STATUS_NOTES[observed.status],
+                                'source_file': item.source_file, 'source_location': proposed,
+                                'policy': BUSINESS_TEXT_POLICY,
+                            }
+                            if observed.status == 'mixed_reference':
+                                result.processing_status = 'partial'
+                                result.warnings.append(f'{proposed} {field}含无法可靠分离的指引与字段文字，保留原文待核验')
             elif item.business_line_id and item.line_id:
                 item.source_context = make_context(item.source_file, item.source_location, '\n'.join(span['text']))
         aliases = [label for label in labels

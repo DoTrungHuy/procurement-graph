@@ -1,0 +1,61 @@
+{
+  "scope": "10-notice saved-response postprocessing pilot, not a fresh model run or official evaluation",
+  "pipeline_version": "package-v2.10",
+  "model_requests": 0,
+  "response_cache_hits": 19,
+  "processed_notices": 10,
+  "reference_notices": 5,
+  "reference_items": 21,
+  "field_observation_rows": 4,
+  "evaluations": {
+    "literal-v1": {
+      "records": 5,
+      "micro": {
+        "tp": 145,
+        "fp": 0,
+        "fn": 2,
+        "tn": 0,
+        "wrong_value": 0,
+        "precision": 1.0,
+        "recall": 0.986395,
+        "f1": 0.993151,
+        "cell_accuracy": 0.986395,
+        "local_weighted_indicator": 0.990476
+      },
+      "matched_rows": 21,
+      "excluded_rows": 61,
+      "normalizations": 0
+    },
+    "business-v1": {
+      "records": 5,
+      "micro": {
+        "tp": 145,
+        "fp": 0,
+        "fn": 0,
+        "tn": 2,
+        "wrong_value": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "cell_accuracy": 1.0,
+        "local_weighted_indicator": 1.0
+      },
+      "matched_rows": 21,
+      "excluded_rows": 61,
+      "normalizations": 2
+    }
+  },
+  "original_gold_unchanged": true,
+  "historical_report_97_percent_reproduced": false,
+  "model_source": "results/workbuddy-ds41-20261017/run-manifest.json",
+  "outputs": "results/reference-field-fix-20261017",
+  "reference_notice_ids": [
+    "t20260305_26231783",
+    "t20260610_26725891",
+    "t20260601_26661712",
+    "t20260212_26175071",
+    "t20260311_26256690"
+  ],
+  "unlabelled_prediction_notices": 5,
+  "business_cells_unchanged_vs_original_pilot": true
+}

@@ -12,6 +12,8 @@ import subprocess
 import sys
 import zipfile
 
+from audit_publish import safe_release_path
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -61,7 +63,7 @@ def main():
     try:
         with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED) as archive:
             for name,path in sorted(selected.items()):
-                if not name.isascii() or Path(name).name=='.env':
+                if not safe_release_path(name) or Path(name).name=='.env':
                     raise ValueError('Invalid release path: '+name)
                 data=path.read_bytes();validate(name,data)
                 archive.writestr('procurement-project/'+name,data)
