@@ -1,0 +1,193 @@
+{
+  "evaluator": "local-row-aligned-v2",
+  "official_score": false,
+  "records": 5,
+  "reference_scope": "labelled-standard-goods-tables",
+  "reference_status": "local-source-reference-not-official-gold",
+  "scope_limit": "部分标注只评价已标注表格，未标注及无法定位的多余行不判对错；缺失的参考行仍计FN。必须同时审阅排除行数量。",
+  "missing_notice_ids": [],
+  "unlabelled_prediction_notices": 0,
+  "coverage": "标的表7个业务字段；不代表三表22列全部正确或官方得分",
+  "definition": "先按包和标的身份一一对齐；错误值计FP与FN，双方空值计TN；重复行按实例计数",
+  "fields": {
+    "product_name": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "category": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "brand": {
+      "tp": 8,
+      "fp": 0,
+      "fn": 2,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.888889,
+      "cell_accuracy": 0.8
+    },
+    "model": {
+      "tp": 8,
+      "fp": 0,
+      "fn": 2,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.888889,
+      "cell_accuracy": 0.8
+    },
+    "unit_price": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "quantity": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "total_price": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    }
+  },
+  "micro": {
+    "tp": 66,
+    "fp": 0,
+    "fn": 4,
+    "tn": 0,
+    "wrong_value": 0,
+    "precision": 1.0,
+    "recall": 0.942857,
+    "f1": 0.970588,
+    "cell_accuracy": 0.942857,
+    "local_weighted_indicator": 0.96
+  },
+  "diagnostics": [
+    {
+      "record": 0,
+      "notice_uuid": "t20260212_26175071",
+      "unlabelled_table_rows": 59,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 2,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": [
+        {
+          "field": "brand",
+          "expected": "详见投标文件",
+          "actual": "",
+          "expected_location": "TABLE:3 ROW:3",
+          "actual_location": "TABLE:3 ROW:3"
+        },
+        {
+          "field": "model",
+          "expected": "详见投标文件",
+          "actual": "",
+          "expected_location": "TABLE:3 ROW:3",
+          "actual_location": "TABLE:3 ROW:3"
+        }
+      ]
+    },
+    {
+      "record": 1,
+      "notice_uuid": "t20260311_26256690",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 2,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": []
+    },
+    {
+      "record": 2,
+      "notice_uuid": "t20260512_26551404",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 3,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": []
+    },
+    {
+      "record": 3,
+      "notice_uuid": "t20260702_26855564",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 2,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": []
+    },
+    {
+      "record": 4,
+      "notice_uuid": "t20260809_27099966",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 1,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": [
+        {
+          "field": "brand",
+          "expected": "满足招标文件要求，详见投标文件“三、分项报价表”",
+          "actual": "",
+          "expected_location": "TABLE:3 ROW:2",
+          "actual_location": "TABLE:3 ROW:2"
+        },
+        {
+          "field": "model",
+          "expected": "满足招标文件要求，详见投标文件“三、分项报价表”",
+          "actual": "",
+          "expected_location": "TABLE:3 ROW:2",
+          "actual_location": "TABLE:3 ROW:2"
+        }
+      ]
+    }
+  ],
+  "model_calls": 9,
+  "average_extraction_seconds": 20.1206,
+  "timing_scope": "仅解析和模型抽取；不含入库与页面渲染，非官方全流程耗时"
+}

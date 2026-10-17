@@ -1,0 +1,130 @@
+{
+  "evaluator": "local-row-aligned-v2",
+  "official_score": false,
+  "records": 2,
+  "reference_scope": "all-predicted-rows-vs-reference",
+  "reference_status": "local-source-reference-not-official-gold",
+  "scope_limit": "",
+  "missing_notice_ids": [],
+  "unlabelled_prediction_notices": 0,
+  "coverage": "标的表7个业务字段；不代表三表22列全部正确或官方得分",
+  "definition": "先按包和标的身份一一对齐；错误值计FP与FN，双方空值计TN；重复行按实例计数",
+  "fields": {
+    "product_name": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "category": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "brand": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "model": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "unit_price": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "quantity": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    },
+    "total_price": {
+      "tp": 13,
+      "fp": 0,
+      "fn": 0,
+      "tn": 0,
+      "wrong_value": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "cell_accuracy": 1.0
+    }
+  },
+  "micro": {
+    "tp": 91,
+    "fp": 0,
+    "fn": 0,
+    "tn": 0,
+    "wrong_value": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "cell_accuracy": 1.0,
+    "local_weighted_indicator": 1.0
+  },
+  "diagnostics": [
+    {
+      "record": 0,
+      "notice_uuid": "t20260303_26212365",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 5,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": []
+    },
+    {
+      "record": 1,
+      "notice_uuid": "t20260601_26661712",
+      "unlabelled_table_rows": 0,
+      "unlocatable_excluded_rows": 0,
+      "matched_rows": 8,
+      "missing_rows": 0,
+      "extra_rows": 0,
+      "warnings": [],
+      "cell_errors": []
+    }
+  ],
+  "model_calls": 2,
+  "average_extraction_seconds": 11.9625,
+  "timing_scope": "仅解析和模型抽取；不含入库与页面渲染，非官方全流程耗时"
+}
