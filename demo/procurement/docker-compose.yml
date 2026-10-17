@@ -12,6 +12,7 @@ services:
       RELATION_BACKEND: ${RELATION_BACKEND:-sqlite}
       DATABASE_PATH: /app/data/entity_mining.db
       UPLOAD_DIR: /app/data/uploads
+      MODEL_DOCUMENT_CACHE_DIR: /app/data/.cache/document-extractions
       DEMO_SEED: ${DEMO_SEED:-false}
       APP_API_TOKEN: ${APP_API_TOKEN:-}
       MODEL_CONCURRENCY: ${MODEL_CONCURRENCY:-2}

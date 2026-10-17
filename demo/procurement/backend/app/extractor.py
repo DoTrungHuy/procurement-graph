@@ -14,6 +14,7 @@ import httpx
 from pydantic import ValidationError
 
 from .config import ROOT, settings
+from .checkpoints import PieceCheckpoints, digest
 from .document_policy import document_role
 from .evidence import align_attachment_packages, ground_evidence
 from .models import BidExtract, ItemExtract, LotExtract, ProjectExtract
@@ -24,7 +25,7 @@ from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 from .model_transport import read_model_response
 
-PIPELINE_VERSION = 'package-v2.10'
+PIPELINE_VERSION = 'package-v2.11'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 
@@ -65,11 +66,35 @@ class DeepSeekExtractor:
         self.total_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
         self.response_cache_hits = 0
         self.response_cache_keys: set[str] = set()
+        self.document_cache_hits = 0
+        self.document_cache_writes = 0
+        self.checkpoints = PieceCheckpoints(self.settings.document_cache_dir)
+        self.request_gate = asyncio.Semaphore(self.settings.model_concurrency)
 
     async def close(self) -> None:
         if self.client is not None:
             await self.client.aclose()
             self.client = None
+
+    def _document_key(self, text: str, prefix: str, chunk_prefix: str, names: list[str]) -> str | None:
+        if self.checkpoints.directory is None:
+            return None
+        settings = self.settings
+        identity = {'pipeline': PIPELINE_VERSION, 'system': self.system_prompt,
+                    'model': settings.deepseek_model, 'base_url': settings.deepseek_base_url,
+                    'max_tokens': settings.model_max_tokens, 'thinking': settings.model_thinking,
+                    'strategy': settings.extraction_strategy, 'prefix': prefix,
+                    'chunk_prefix': chunk_prefix, 'max_chars': settings.max_llm_chars,
+                    'source': hashlib.sha256(text.encode()).hexdigest(),
+                    'require_free': settings.model_require_free,
+                    'legacy_names': names if self.cache_only else []}
+        if settings.extraction_strategy == 'rag':
+            from .retrieval import KNOWLEDGE
+            try:
+                identity['knowledge'] = hashlib.sha256(KNOWLEDGE.read_bytes()).hexdigest()
+            except OSError:
+                return None
+        return digest(identity)
 
     async def _call(self, text: str, names: list[str]) -> ProjectExtract:
         settings = self.settings
@@ -142,11 +167,12 @@ class DeepSeekExtractor:
                     if self.client is None:
                         loopback = httpx.URL(settings.deepseek_base_url).host in {'127.0.0.1', 'localhost', '::1'}
                         self.client = httpx.AsyncClient(timeout=httpx.Timeout(180,connect=20), trust_env=not loopback)
-                    self.calls += 1
-                    if usage is not None:
-                        usage['requests'] += 1
-                    response = await self.client.post(settings.deepseek_base_url+'/chat/completions',
-                        headers={'Authorization':'Bearer '+self.api_key},json=payload)
+                    async with self.request_gate:
+                        self.calls += 1
+                        if usage is not None:
+                            usage['requests'] += 1
+                        response = await self.client.post(settings.deepseek_base_url+'/chat/completions',
+                            headers={'Authorization':'Bearer '+self.api_key},json=payload)
                     if response.status_code in {429,500,502,503,504}:
                         last = f'模型服务 HTTP {response.status_code}'
                         if attempt < 2:
@@ -212,6 +238,7 @@ class DeepSeekExtractor:
                  'requests': 0, 'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0,
                  'response_cache_hits': 0,
                  'historical_context_cache_hits': 0, 'cache_only': self.cache_only,
+                 'document_cache_hits': 0, 'document_cache_writes': 0,
                  'documents': [],
                  'response_models': [], 'parse_seconds': 0.0, 'model_seconds': 0.0}
         token = _usage.set(usage)
@@ -247,17 +274,18 @@ class DeepSeekExtractor:
         announcement_result = None
         for index,path in enumerate(files):
             source = 'announcement' if index == 0 and path.suffix.lower() in {'.html','.htm'} else 'attachment'
+            parse_started = time.perf_counter()
             try:
-                parse_started = time.perf_counter()
                 text = await asyncio.to_thread(parse_file,path)
-                if _usage.get() is not None:
-                    _usage.get()['parse_seconds'] += round(time.perf_counter() - parse_started, 4)
                 parsed.append(text)
                 errors.extend(f'{names[index]}: {line[len(PARSE_WARNING_PREFIX):]}'
                               for line in text.splitlines() if line.startswith(PARSE_WARNING_PREFIX))
             except Exception as exc:
                 errors.append(f'{names[index]}: {type(exc).__name__}: {str(exc)[:180]}')
                 continue
+            finally:
+                if _usage.get() is not None:
+                    _usage.get()['parse_seconds'] += round(time.perf_counter() - parse_started, 4)
             if source == 'announcement':
                 announcement_context = text[:1600]
             role, skip_reason = ('announcement','') if source == 'announcement' else document_role(path.name,text)
@@ -278,12 +306,31 @@ class DeepSeekExtractor:
                       f'[上下文，仅用于理解字段，不重复抽取；采购包必须由当前段落证明]\n公告：{announcement_context}\n文件开头：{text[:1200]}\n[当前段落]\n')
             _replay_context.set({'prefix':prefix,'legacy_prefix':legacy_prefix,'names':names})
             chunk_prefix = legacy_prefix if self.cache_only else prefix
+            # Checkpoints follow current grounding rules, the entire source,
+            # announcement context and exact chunking. Never use an old final
+            # result to bypass a changed prompt, source, model or RAG corpus.
+            document_key = self._document_key(text, prefix, chunk_prefix, names)
             for part in chunk_text(text,max(128,settings.max_llm_chars-len(chunk_prefix))):
+                checkpoint_key = digest([document_key, part]) if document_key else None
                 try:
+                    cached_piece = await asyncio.to_thread(self.checkpoints.load, checkpoint_key) if checkpoint_key else None
+                    if cached_piece is not None:
+                        pieces, metadata = cached_piece
+                        self.document_cache_hits += 1
+                        if _usage.get() is not None:
+                            usage = _usage.get()
+                            usage['document_cache_hits'] += 1
+                            usage['response_models'] = sorted(set(usage['response_models']) | set(metadata.get('response_models', [])))
+                            usage.setdefault('retrieval', []).extend(metadata.get('retrieval', []))
+                        results.extend(pieces)
+                        continue
+                    retrieval_start = len((_usage.get() or {}).get('retrieval', []))
                     model_started = time.perf_counter()
-                    pieces = await self._extract_piece(prefix, part, [names[index]])
-                    if _usage.get() is not None:
-                        _usage.get()['model_seconds'] += round(time.perf_counter() - model_started, 4)
+                    try:
+                        pieces = await self._extract_piece(prefix, part, [names[index]])
+                    finally:
+                        if _usage.get() is not None:
+                            _usage.get()['model_seconds'] += round(time.perf_counter() - model_started, 4)
                     for result in pieces:
                         for lot in result.package_records():
                             for item in lot.items:
@@ -296,6 +343,13 @@ class DeepSeekExtractor:
                         if source == 'attachment' and announcement_result is not None:
                             align_attachment_packages(result,announcement_result,path.name,text)
                         results.append(result)
+                    usage = _usage.get() or {}
+                    metadata = {'response_models': usage.get('response_models', []),
+                                'retrieval': usage.get('retrieval', [])[retrieval_start:]}
+                    if checkpoint_key and await asyncio.to_thread(self.checkpoints.save, checkpoint_key, pieces, metadata):
+                        self.document_cache_writes += 1
+                        if _usage.get() is not None:
+                            _usage.get()['document_cache_writes'] += 1
                 except FatalModelError:
                     raise
                 except Exception as exc:

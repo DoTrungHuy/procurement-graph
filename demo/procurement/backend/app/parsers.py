@@ -412,6 +412,25 @@ def _pdf(path: Path) -> str:
     return _bounded_join(chunks)
 
 
+def _docx_table_rows(table):
+    # Match python-docx row.cells, including omitted cells and merged spans.
+    # Cache each XML cell once: vertical continuations otherwise repeatedly
+    # traverse all prior rows and re-read the root cell's paragraphs.
+    from docx.table import _Cell
+    resolved = {}
+
+    def values(tc):
+        if tc not in resolved:
+            if tc.vMerge == 'continue':
+                resolved[tc] = values(tc._tc_above)
+            else:
+                resolved[tc] = [_Cell(tc, table).text.strip()] * tc.grid_span
+        return resolved[tc]
+
+    for index, row in enumerate(table.rows, 1):
+        yield index, [text for tc in row._tr.tc_lst for text in values(tc)]
+
+
 def _docx(path: Path) -> str:
     document = Document(str(path))
     from docx.table import Table
@@ -454,8 +473,7 @@ def _docx(path: Path) -> str:
                 chunks.append(text)
         elif node.tag.endswith('}tbl'):
             table_index += 1
-            rows = ((index, [cell.text.strip() for cell in row.cells])
-                    for index, row in enumerate(Table(node, document).rows, 1))
+            rows = _docx_table_rows(Table(node, document))
             chunks.append(_bounded_join(_table_rows(rows, table_index)))
         image_chunks(node)
     return _bounded_join(chunks)
