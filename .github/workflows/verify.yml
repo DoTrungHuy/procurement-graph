@@ -49,6 +49,7 @@ jobs:
         run: |
           npm --prefix scripts ci
           ./scripts/node_modules/.bin/playwright install --with-deps chromium
+          node scripts/test_query_network.mjs
           node scripts/verify_frontend.mjs --production
           node scripts/verify_frontend_edgecases.mjs
           node scripts/verify_item_hierarchy.mjs

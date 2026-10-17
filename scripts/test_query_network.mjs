@@ -11,13 +11,20 @@ assert.equal(common.links.find(edge => edge.source === 'supplier:供应商乙').
 assert(!common.links.some(edge => edge.source === 'supplier:未记录主体'))
 assert.equal(common.nodes.find(node => node.type === 'project').projectId, 7)
 const limited = queryNetwork('supplier-competitors', {
+  top5: [{ bidder: '乙', frequency: 4 }],
   all_participants: [{ bidder: '乙', frequency: 4 }, { bidder: '丙', frequency: 2 }]
-}, { supplier: '甲' }, 1)
+}, { supplier: '甲' }, 1, 'secondary')
 assert.equal(limited.total, 2)
 assert.equal(limited.shown, 1)
 assert.equal(limited.links.length, 1)
 assert.match(limited.links[0].relation, /共同竞标 · 4 个采购包/)
 assert(limited.nodes.find(node => node.name === '甲').focus)
+const topOnly = queryNetwork('supplier-competitors', {
+  top5: [{ bidder: '乙', frequency: 4 }],
+  all_participants: [{ bidder: '乙', frequency: 4 }, { bidder: '丙', frequency: 2 }]
+}, { supplier: '甲' }, 8)
+assert.equal(topOnly.total, 1, 'Primary network must follow the Top 5 result group')
+assert(!topOnly.nodes.some(node => node.name === '丙'))
 const matrix = queryNetwork('common-purchasers', {
   suppliers: ['甲', '乙'], purchasers: [{ purchaser: '单位', supplier_details: [{ supplier: '甲', cooperation_count: 3 }, { supplier: '乙', cooperation_count: 1 }] }]
 }, {}, 8)

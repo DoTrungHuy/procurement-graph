@@ -158,7 +158,19 @@ try {
     await screenshot(`chart-${scenario}`)
     if (scenario === 'purchaser-partners') { await screenshot('relations-desktop'); await result.getByRole('button', { name: '产品品牌', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
     if (scenario === 'purchaser-bidders') { await result.getByRole('button', { name: '共同投标组合', exact: true }).click(); assert(await result.locator('tbody tr').count() > 0) }
-    if (scenario === 'supplier-competitors') { await result.getByRole('button', { name: '全部参与方', exact: true }).click(); const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' }); const expected = await json('analytics/supplier-competitors?' + params); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length)); report.allParticipants = expected.all_participants.length; if (expected.all_participants.length > 15) { await result.getByRole('button', { name: '关系结果下一页', exact: true }).click(); assert.equal(await result.locator('tbody tr').count(), Math.min(15, expected.all_participants.length - 15)) } }
+    if (scenario === 'supplier-competitors') {
+      const params = new URLSearchParams({ dataset_id: 'official-reference', supplier: '中国移动通信集团广东有限公司' })
+      const expected = await json('analytics/supplier-competitors?' + params)
+      await result.getByTestId('network-summary').filter({ hasText: `展示 ${Math.min(8, expected.top5.length)} / ${expected.top5.length} 项` }).waitFor()
+      await result.getByRole('button', { name: '全部参与方', exact: true }).click()
+      await result.getByTestId('network-summary').filter({ hasText: `展示 ${Math.min(8, expected.all_participants.length)} / ${expected.all_participants.length} 项` }).waitFor()
+      assert.equal(await result.locator('.relation-table tbody tr').count(), Math.min(15, expected.all_participants.length))
+      report.allParticipants = expected.all_participants.length
+      if (expected.all_participants.length > 15) {
+        await result.getByRole('button', { name: '关系结果下一页', exact: true }).click()
+        assert.equal(await result.locator('.relation-table tbody tr').count(), Math.min(15, expected.all_participants.length - 15))
+      }
+    }
     if (scenario === 'common-purchasers') { await result.locator('summary').first().click(); assert(await result.locator('.supplier-details dd').count() >= 2) }
     if (scenario === 'common-projects') {
       const expected = await json('analytics/common-projects?' + new URLSearchParams({ dataset_id: 'official-reference', suppliers: '中国电信股份有限公司广东分公司,中国移动通信集团广东有限公司' }))

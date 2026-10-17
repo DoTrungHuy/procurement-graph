@@ -17,7 +17,7 @@ export function queryNetwork(scenario, result, parameters, limit = 8, group = 'p
     for (const row of rows.slice(0, limit)) edge(add('supplier', row.bidder_a, false, 0), add('supplier', row.bidder_b, false, 1), `共同投标 · ${row.frequency} 个采购包（${parameters.purchaser}）`)
   } else if (scenario === 'purchaser-bidders' || scenario === 'supplier-competitors') {
     const root = add(scenario === 'purchaser-bidders' ? 'purchaser' : 'supplier', parameters.purchaser || parameters.supplier, true)
-    const rows = (scenario === 'purchaser-bidders' ? result.top_bidders : result.all_participants) || []; total = rows.length
+    const rows = (scenario === 'purchaser-bidders' ? result.top_bidders : group === 'secondary' ? result.all_participants : result.top5) || []; total = rows.length
     for (const row of rows.slice(0, limit)) edge(root, add('supplier', row.bidder), `${scenario === 'purchaser-bidders' ? '参与投标' : '共同竞标'} · ${row.frequency} 个采购包`)
   } else if (scenario === 'common-purchasers') {
     for (const supplier of result.suppliers || []) add('supplier', supplier, true)
