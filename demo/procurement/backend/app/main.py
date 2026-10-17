@@ -311,10 +311,12 @@ def project_detail(project_id: int,dataset_id: str=Depends(dataset)):
             candidate = None
         # Never attach context to a different source row in a legacy/manual DB.
         if candidate and len(candidate.items) == len(lot.items) and all(
-            item.model_dump(exclude={'source_context','lot_name'}) ==
-            row.model_dump(exclude={'source_context','lot_name'})
+            item.model_dump(exclude={'source_context','field_observations','lot_name'}) ==
+            row.model_dump(exclude={'source_context','field_observations','lot_name'})
             for item,row in zip(candidate.items,lot.items)):
             lot = candidate
+    for item, observed in zip(items,lot.items):
+        item['field_observations'] = observed.field_observations
     return {**record,'bids':rows('SELECT * FROM bids WHERE project_id=? ORDER BY id',(project_id,)),
             'items':items,'item_hierarchy':analyze_lot(lot)}
 

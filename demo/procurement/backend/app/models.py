@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, ValidationInfo, field_validator, model_validator
 
 from .normalization import disclosed_text, has_parallel_numbers, lot_identity, model_match_key, money_to_yuan, number_value, review_status
 
@@ -68,11 +68,13 @@ class ItemExtract(ExtractionModel):
     business_line_id: str = ""  # Source business code; never a unique row key by itself.
     related_sources: list[dict[str, str]] = Field(default_factory=list)
     source_context: dict[str, str] = Field(default_factory=dict)
+    # Filled from verified source cells, never accepted as model proof.
+    field_observations: dict[str, dict[str, str]] = Field(default_factory=dict)
 
     @field_validator('product_name', 'category', 'brand', 'model', mode='before')
     @classmethod
-    def actual_value(cls, value):
-        return disclosed_text(value)
+    def actual_value(cls, value, info: ValidationInfo):
+        return disclosed_text(value, info.field_name)
 
     @model_validator(mode='after')
     def align_model_key(self):

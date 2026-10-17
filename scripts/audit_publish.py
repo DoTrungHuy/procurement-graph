@@ -45,6 +45,12 @@ def ignored(name, rules):
     return result
 
 
+def safe_release_path(name: str) -> bool:
+    """UTF-8 names are valid ZIP paths; reject traversal and Windows hazards."""
+    return (bool(name) and not re.search(r'[\x00-\x1f\x7f<>:"\\|?*]',name)
+            and all(part not in {'','.', '..'} and not part.endswith((' ','.')) for part in name.split('/')))
+
+
 def candidates():
     if (ROOT / '.git').exists() and shutil.which('git'):
         command = ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z']
@@ -81,8 +87,8 @@ def main():
             continue
         content = path.read_bytes()
         files[name] = {'bytes': len(content), 'sha256': hashlib.sha256(content).hexdigest()}
-        if not name.isascii():
-            findings.append({'file': name, 'issue': 'non-English path'})
+        if not safe_release_path(name):
+            findings.append({'file': name, 'issue': 'unsafe release path'})
         if Path(name).name == '.env' or any(value in content for value in secrets):
             findings.append({'file': name, 'issue': 'private credential/configuration must be excluded'})
         if re.search(rb'\bsk-[A-Za-z0-9_-]{20,}', content):

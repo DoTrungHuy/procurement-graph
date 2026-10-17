@@ -26,7 +26,7 @@ COMPOSE = ROOT / 'demo/procurement/docker-compose.yml'
 FAKE_TOKEN = 'deployment-fixture-access'
 FAKE_KEY = 'deployment-fixture-credential'
 FIXTURE_ENV = {
-    # Match the disclosed historical response fingerprints; replay forbids HTTP.
+    # Historical snapshots are demonstration data; stale replay must refuse HTTP.
     'DEEPSEEK_API_KEY': '', 'DEEPSEEK_BASE_URL': 'https://api.deepseek.com',
     'DEEPSEEK_MODEL': 'deepseek-flash', 'MODEL_NETWORK_ENABLED': 'false',
     'EXTRACTION_STRATEGY': 'schema', 'RELATION_BACKEND': 'sqlite', 'DEMO_SEED': 'false',
@@ -116,17 +116,18 @@ class Deployment:
         while time.monotonic() < deadline:
             state = self.request('/api/jobs/' + job['id'])
             if state['finished'] and 'model_calls' in state.get('metrics', {}):
-                assert state['failed'] == 0, state
+                assert state['failed'] == 20, state
                 assert state['metrics']['model_calls'] == 0, state
-                assert state['metrics']['response_cache_hits'] == 20, state
+                assert state['metrics']['response_cache_hits'] == 0, state
+                assert all('未命中当前规则' in error for error in state['errors']), state
                 return state
             time.sleep(1)
         raise RuntimeError('Offline replay did not finish')
 
-    def workbook(self, job: dict):
-        query = urlencode({'dataset_id': 'deployment-check', 'job_id': job['id']})
+    def workbook(self):
+        query = urlencode({'dataset_id': 'deployment-check'})
         headers, content = self.request('/api/export/standard.xlsx?' + query)
-        assert headers['Content-Disposition'] == 'attachment; filename=procurement-batch-tables.xlsx'
+        assert headers['Content-Disposition'] == 'attachment; filename=procurement-tables.xlsx'
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             workbook = archive.read('xl/workbook.xml').decode()
             for name in ['总表', '标的表', '投标人表']:
@@ -181,13 +182,30 @@ def verify_mode(mode: str, run_id: str, scratch: Path, env: dict, images: dict, 
             assert report['passed'] and report['synced_notices'] == 20 and report['parity_cases'] > 0, report
             result['graph_parity'] = report
         job = deployment.replay()
-        result['checks'].append('20 sample notices replayed with zero model requests')
+        result['checks'].append('20 stale sample responses rejected; zero cache hits and zero model requests')
+        assert deployment.request('/api/stats?dataset_id=deployment-check')['notices'] == 0
+        # Import the disclosed snapshot explicitly. This is not a model replay.
+        # A distinct dataset proves persistence without startup seeding masking loss.
+        program = """from pathlib import Path
+from app.database import upsert_notice
+from app.models import ProjectExtract
+from app.neo4j_sync import sync_notice
+from app.config import settings
+records=[ProjectExtract.model_validate_json(line) for line in Path('/app/data/demo/sample-results.jsonl').read_text('utf-8').splitlines() if line.strip()]
+for record in records:
+    upsert_notice(record,[], 'deployment-check')
+    if settings.neo4j_uri:
+        sync_notice('deployment-check',record.notice_uuid)
+print(len(records))
+"""
+        assert deployment.command('exec','-T','api','python','-c',program).strip().splitlines()[-1] == '20'
+        result['data_source'] = 'explicit import of bundled historical snapshot; not current-rule extraction'
         stats = deployment.request('/api/stats?dataset_id=deployment-check')
         assert stats['notices'] == 20 and stats['projects'] == 26 and stats['items'] == 138, stats
-        result['workbook_bytes'] = deployment.workbook(job)
-        result['checks'].append('batch download contains all three standard sheets')
+        result['workbook_bytes'] = deployment.workbook()
+        result['checks'].append('historical snapshot download contains all three standard sheets')
         if graph:
-            # Replay must also have populated the graph used by the live API.
+            # The explicitly imported snapshot must populate the live graph.
             result['graph_before_restart'] = deployment.request('/api/graph?dataset_id=deployment-check')
             assert result['graph_before_restart']['nodes']
         saved = deployment.request('/api/settings/model', {
@@ -202,7 +220,7 @@ def verify_mode(mode: str, run_id: str, scratch: Path, env: dict, images: dict, 
         assert health['model'] == 'fixture-saved-model' and health['deepseek_configured'] and health['model_network_enabled'], health
         assert deployment.request('/api/stats?dataset_id=deployment-check') == stats
         assert deployment.request('/api/jobs/' + job['id'])['metrics']['model_calls'] == 0
-        assert deployment.workbook(job) > 0
+        assert deployment.workbook() > 0
         stored = deployment.command('exec', '-T', 'api', 'python', '-c',
                                     "import json; from pathlib import Path; d=json.loads(Path('/app/data/model-settings.local.json').read_text()); assert d['api_key']=='deployment-fixture-credential'; print('saved-credential-ok')")
         assert 'saved-credential-ok' in stored
@@ -235,7 +253,7 @@ def main():
     images = {name: f'procurement-check-{run_id}-{name}' for name in ['api', 'web']}
     staging = ROOT / '.cache/deployment-check'
     staging.mkdir(parents=True, exist_ok=True)
-    report = {'scope': 'Disposable Compose deployments; fake credentials; internal network; historical replay', 'passed': False, 'deployments': []}
+    report = {'scope': 'Disposable Compose deployments; fake credentials; internal network; historical snapshot and stale replay rejection', 'passed': False, 'deployments': []}
     try:
         with tempfile.TemporaryDirectory(prefix='compose-', dir=staging) as temporary:
             scratch = Path(temporary).resolve()

@@ -5,6 +5,8 @@ import math
 import unicodedata
 from decimal import Decimal, InvalidOperation
 
+from .field_text import interpret_field_text
+
 
 MONEY_UNITS = {"亿元": Decimal("100000000"), "亿": Decimal("100000000"), "万元": Decimal("10000"), "万": Decimal("10000"), "千元": Decimal("1000"), "千": Decimal("1000"), "元": Decimal("1")}
 _DURATION = r'\d+(?:\.\d+)?\s*(?:个)?(?:工作日|日历日|天|日|月|年)'
@@ -129,15 +131,8 @@ def lot_identity(name: str) -> str:
     return 'number:' + number.upper()
 
 
-def disclosed_text(value: object) -> str:
-    text = str(value or '').strip()
-    if text in {'无', '/', '-', '—', '未提供', '未披露', '不适用', '暂无'} or re.fullmatch(r'[-—–/\s]+', text):
-        return ''
-    if re.fullmatch(r'(?:详见|具体见|见).*(?:附件|附表|清单|文件|报价表|明细).*', text):
-        return ''
-    if re.fullmatch(r'(?:满足|符合|响应|按照|按).*(?:文件|要求).*', text):
-        return ''
-    return text
+def disclosed_text(value: object, field: str = '') -> str:
+    return interpret_field_text(value, field).value
 
 
 def yuan_to_wan(value: object, places: int | None = None) -> float | None:
