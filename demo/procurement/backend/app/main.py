@@ -95,6 +95,7 @@ def health():
     effective = current_settings(settings)
     return {'status':'ok','version':__version__,'deepseek_configured':bool(effective.deepseek_api_key),
             'model_network_enabled':effective.model_network_enabled,'model_settings_error':effective.model_settings_error,
+            'model_settings_readonly':settings.model_settings_readonly,
             'model':effective.deepseek_model,'neo4j_configured':bool(settings.neo4j_uri),
             'relation_backend':settings.relation_backend,'extraction_strategy':settings.extraction_strategy,
             'auth_required':bool(settings.api_token),'official_data_available':(settings.official_data_dir/'html').is_dir(),

@@ -78,6 +78,9 @@ def _read(path: Path) -> dict:
 
 
 def current_settings(base: Settings) -> Settings:
+    # Read-only deployments ignore any saved file so server environment variables stay authoritative.
+    if base.model_settings_readonly:
+        return base
     try:
         with _lock:
             values = _read(Path(base.model_settings_path))
@@ -95,10 +98,13 @@ def public_settings(base: Settings) -> dict:
         address = ''
     return {'base_url':address,'model':effective.deepseek_model,
             'api_key_configured':bool(effective.deepseek_api_key),'enabled':effective.model_network_enabled,
-            'configuration_error':effective.model_settings_error}
+            'configuration_error':effective.model_settings_error,
+            'read_only':base.model_settings_readonly}
 
 
 def save_settings(base: Settings, update: ModelConfigurationUpdate) -> dict:
+    if base.model_settings_readonly:
+        raise ValueError('模型配置由管理员在服务端设定，网站内不可修改')
     with _lock:
         current = current_settings(base)
         supplied = update.api_key.get_secret_value() if update.api_key is not None else ''

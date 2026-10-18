@@ -26,6 +26,9 @@ class Settings:
     deepseek_base_url: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
     deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-flash")
     model_settings_path: str = os.getenv('MODEL_SETTINGS_PATH') or str(WORKSPACE / 'config/model-settings.local.json')
+    # When true the model configuration comes only from server environment variables
+    # and cannot be changed from the browser; visitors only supply the access token.
+    model_settings_readonly: bool = _bool('MODEL_SETTINGS_READONLY', False)
     model_settings_error: str = ''
     model_profile_path: str = os.getenv('MODEL_PROFILE_PATH') or str(WORKSPACE / 'config/model-profile.local.json')
     model_network_enabled: bool = _bool('MODEL_NETWORK_ENABLED', False)

@@ -152,3 +152,39 @@ def test_failed_atomic_write_preserves_previous_settings_and_cleans_temporary_fi
     assert response.status_code == 503
     assert path.read_bytes() == original
     assert not list(path.parent.glob('.model-settings-*.local.json'))
+
+
+def test_read_only_deployment_serves_server_configuration_and_rejects_web_writes(client,model_base,monkeypatch):
+    locked = replace(model_base,model_settings_readonly=True,api_token='fixture-visitor-token',
+                     deepseek_api_key='fixture-server-key',deepseek_base_url='https://server.invalid/v1',
+                     deepseek_model='server-model',model_network_enabled=True)
+    monkeypatch.setattr(main,'settings',locked)
+    monkeypatch.setattr(extractor,'settings',locked)
+    headers = {'Authorization':'Bearer fixture-visitor-token'}
+
+    listing = client.get('/api/settings/model',headers=headers)
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body['read_only'] is True and body['base_url'] == 'https://server.invalid/v1'
+    assert body['model'] == 'server-model' and body['api_key_configured'] is True
+    assert 'fixture-server-key' not in listing.text
+
+    health = client.get('/api/health')
+    assert health.status_code == 200 and health.json()['model_settings_readonly'] is True
+
+    rejected = client.post('/api/settings/model',json=payload(api_key='fixture-attacker-key'),headers=headers)
+    assert rejected.status_code == 422 and '服务端' in rejected.json()['detail']
+    assert client.get('/api/settings/model').status_code == 401
+
+
+def test_read_only_deployment_ignores_previously_saved_file(client,model_base,monkeypatch):
+    from pathlib import Path
+    Path(model_base.model_settings_path).write_text(json.dumps({
+        'base_url':'https://stale.invalid/v1','model':'stale-model',
+        'api_key':'fixture-stale-key','enabled':False}),encoding='utf-8')
+    locked = replace(model_base,model_settings_readonly=True)
+    monkeypatch.setattr(main,'settings',locked)
+    effective = current_settings(locked)
+    assert effective.deepseek_model == 'original-model'
+    assert effective.deepseek_api_key == 'fixture-original-credential'
+    assert effective.model_network_enabled is False
