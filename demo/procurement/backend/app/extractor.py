@@ -25,7 +25,7 @@ from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 from .model_transport import read_model_response
 
-PIPELINE_VERSION = 'package-v2.12'
+PIPELINE_VERSION = 'package-v2.13'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 
@@ -323,6 +323,7 @@ class DeepSeekExtractor:
         results = []
         errors = []
         parsed = []
+        package_sources = {}
         names = [f'doc-{index+1}:{path.name}' for index,path in enumerate(files)]
         announcement_context = ''
         announcement_result = None
@@ -332,6 +333,7 @@ class DeepSeekExtractor:
             try:
                 text = await asyncio.to_thread(parse_file,path)
                 parsed.append(text)
+                package_sources[names[index]] = text
                 errors.extend(f'{names[index]}: {line[len(PARSE_WARNING_PREFIX):]}'
                               for line in text.splitlines() if line.startswith(PARSE_WARNING_PREFIX))
             except Exception as exc:
@@ -418,6 +420,8 @@ class DeepSeekExtractor:
             fallback.warnings.extend(errors or ['未配置模型；仅返回离线项目字段，不代表七字段抽取完成'])
             return fallback
         result = merge_results(results)
+        from .package_identity import resolve_package_labels
+        resolve_package_labels(result, package_sources)
         result.warnings.extend(errors)
         result.processing_status = 'partial' if errors or result.processing_status == 'partial' else 'complete'
         validate_result(result)
