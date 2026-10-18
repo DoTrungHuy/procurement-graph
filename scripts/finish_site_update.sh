@@ -6,8 +6,8 @@ site_root=/opt/procurement-project-next
 python3 scripts/apply_site_update.py --root "$site_root"
 
 site_stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
-# Compose builds these project/service tags. Container Config.Image can instead
-# contain an obsolete digest after the tag has moved to a freshly built image.
+# Use Compose service tags throughout. Internal container/config image digests
+# are not necessarily accepted by docker image inspect on this image store.
 site_web_image=procurement-ecs-web:latest
 site_api_image=procurement-ecs-api:latest
 docker image inspect "$site_api_image" >/dev/null
@@ -18,22 +18,17 @@ if [ "$site_actual" != "$site_expected" ]; then
   exit 1
 fi
 
-# Preserve the running web filesystem even when its original image record is gone.
-site_web_base=$(docker commit procurement-ecs-web-1 "procurement-site-web-rollback:$site_stamp")
-site_api_base=$(docker inspect --format '{{.Image}}' procurement-ecs-api-1)
-if docker image inspect "$site_api_base" >/dev/null 2>&1; then
-  docker image tag "$site_api_base" "procurement-site-api-rollback:$site_stamp"
-else
-  docker commit --change 'ENV APP_API_TOKEN="" DEEPSEEK_API_KEY="" NEO4J_PASSWORD=""' \
-    procurement-ecs-api-1 "procurement-site-api-rollback:$site_stamp" >/dev/null
-fi
+# Commit directly to named tags; do not reuse commit's returned digest either.
+site_web_base="procurement-site-web-rollback:$site_stamp"
+docker commit procurement-ecs-web-1 "$site_web_base" >/dev/null
+docker commit --change 'ENV APP_API_TOKEN="" DEEPSEEK_API_KEY="" NEO4J_PASSWORD=""' \
+  procurement-ecs-api-1 "procurement-site-api-rollback:$site_stamp" >/dev/null
 site_stage="procurement-site-web-stage-$site_stamp"
 docker create --pull never --name "$site_stage" "$site_web_base" >/dev/null
 trap 'docker rm "$site_stage" >/dev/null 2>&1 || true' EXIT
 docker cp payload/demo/procurement/frontend/dist/. "$site_stage:/usr/share/nginx/html/"
 docker cp payload/demo/procurement/frontend/nginx.conf "$site_stage:/etc/nginx/conf.d/default.conf"
-site_new_image=$(docker commit "$site_stage")
-docker image tag "$site_new_image" "$site_web_image"
+docker commit "$site_stage" "$site_web_image" >/dev/null
 
 python3 scripts/apply_site_update.py --root "$site_root"
 docker compose --project-name procurement-ecs --env-file "$site_root/.env" \
