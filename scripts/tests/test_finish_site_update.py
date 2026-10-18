@@ -87,6 +87,10 @@ docker() {
         assert not any(line.startswith('commit ') and 'procurement-ecs-api-1' in line for line in calls)
         assert any(line.startswith('commit procurement-site-web-stage-') and line.endswith('procurement-ecs-web:latest') for line in calls)
         assert any('--entrypoint nginx procurement-ecs-web:latest -t' in line for line in calls)
+        staging = next(line for line in calls if line.startswith('create '))
+        assert '--label com.docker.compose.project= ' in staging
+        assert '--label com.docker.compose.service= ' in staging
+        assert '--label com.docker.compose.oneoff=True ' in staging
         assert 'container-d5b779260b8f' in result.stdout
     elif mode == 'compose-failure':
         assert result.returncode != 0

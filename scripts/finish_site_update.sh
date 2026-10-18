@@ -40,7 +40,11 @@ site_web_base="procurement-site-web-rollback:$site_stamp"
 docker commit procurement-ecs-web-1 "$site_web_base" >/dev/null
 site_stage="procurement-site-web-stage-$site_stamp"
 printf 'Rollback images: %s and %s\n' "$site_api_rollback" "$site_web_base"
-docker create --pull never --name "$site_stage" "$site_web_base" >/dev/null
+# The web snapshot inherits live Compose labels. Override its project/service
+# identity so Compose cannot recreate this stopped helper during service switch.
+docker create --pull never --name "$site_stage" \
+  --label com.docker.compose.project= --label com.docker.compose.service= \
+  --label com.docker.compose.oneoff=True "$site_web_base" >/dev/null
 trap 'docker rm "$site_stage" >/dev/null 2>&1 || true' EXIT
 docker cp payload/demo/procurement/frontend/dist/. "$site_stage:/usr/share/nginx/html/"
 docker cp payload/demo/procurement/frontend/nginx.conf "$site_stage:/etc/nginx/conf.d/default.conf"

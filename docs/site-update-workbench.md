@@ -45,6 +45,8 @@ tar -xzf /tmp/competition-site-recovery-20261018.tar.gz -C /tmp/competition-site
 
 这次不要调用早先上传的 `/tmp/finish_site_update.sh`；单独更新一个 Shell 文件会缺少新增的 Python 备份助手。阶段 3 可能需要数分钟，阶段 7 会短暂切换前后端服务。完成后应保存输出中的两个回滚镜像标签，并继续执行公网验收。若阶段 7 失败，先保留输出与现有容器状态，不清理镜像、数据库或数据卷。
 
+2026-10-18 的 Workbench 实际执行已完成七个阶段，随后公网界面与全量导出验收完成；容器清单只剩 API、web 和 HTTPS 服务。详见 `docs/verification/competition-site-public-20261018.md`。恢复脚本另补临时前端容器的 Compose 项目/服务标签隔离，防止镜像继承的标签使临时容器也被 Compose 接管；这是后续工具改进，当前网站无需因此重部署。
+
 更新后在浏览器刷新并检查：
 
 - 首次访问默认选择最新有数据的全量集；已选择的其他非空数据集仍会保留。
