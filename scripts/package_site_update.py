@@ -33,6 +33,7 @@ def main():
             add('payload/' + name, data)
         add('site-update-manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2).encode())
         add('scripts/apply_site_update.py', (ROOT / 'scripts/apply_site_update.py').read_bytes())
+        add('scripts/finish_site_update.sh', (ROOT / 'scripts/finish_site_update.sh').read_bytes())
         add('README.md', (ROOT / 'docs/site-update-workbench.md').read_bytes())
     print(json.dumps({'file': str(output), 'files': len(files), 'bytes': output.stat().st_size,
                       'sha256': hashlib.sha256(output.read_bytes()).hexdigest()}))

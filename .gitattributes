@@ -8,6 +8,7 @@
 *.jsonl text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
+*.sh text eol=lf
 *.png binary
 *.pdf binary
 *.docx binary

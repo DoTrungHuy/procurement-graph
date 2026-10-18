@@ -19,6 +19,14 @@ python3 scripts/apply_site_update.py --root /opt/procurement-project-next --appl
 
 实际运行路径已由 2026-10-18 的容器标签确认：`procurement-ecs-api-1` 和 `procurement-ecs-web-1` 的 Compose 工作目录均为 `/opt/procurement-project-next/demo/procurement`。此前的 `/opt/procurement-project` 路径不适用于这套运行服务。以后应先核对容器标签，再指定 `--root`，不要根据旧目录名猜测。
 
+### API 已构建、Node 镜像源返回 502 时
+
+2026-10-18 出现前端 `node:22-alpine` 经 `docker.m.daocloud.io` 请求元数据返回 502，API 镜像已成功生成。普通更新脚本因此停在构建阶段，尚未执行 Compose 容器切换，但源码已写入且旧源码已备份。
+
+可运行更新包中的 `bash scripts/finish_site_update.sh`：先校验当前目录和任务空闲状态，验证已构建的 API 镜像确实含包内的导出修复，再从运行中前端的镜像创建停止的临时容器，将包内生产 `dist` 写入该容器并提交为新前端镜像，最后用 `--no-build --pull never` 切换 API 与 web。无需 Node 镜像、npm 下载或修改全局镜像源。旧运行镜像另存回滚标签，临时容器自动清理，数据库与模型设置仍沿用原卷。
+
+旧更新包若没有此恢复脚本，可将仓库 `scripts/finish_site_update.sh` 的内容直接粘贴到 Workbench 执行；无需重新上传业务数据。该恢复方式以“API 构建已成功”为前提，API 文件哈希不符时会停止。本地检查只覆盖脚本语法和模拟 Docker 的流程，目标 ECS 仍需执行后检查。
+
 更新后在浏览器刷新并检查：
 
 - 首次访问默认选择最新有数据的全量集；已选择的其他非空数据集仍会保留。
