@@ -56,6 +56,8 @@
 
 ## 上线和待验证
 
-窄范围更新包：`deliverables/deployment/competition-site-readiness-20261018.tar.gz`，使用 `docs/site-update-workbench.md` 中的 Workbench 命令。包内路径和 SHA-256 校验已通过，未执行目标 ECS 的镜像构建或容器更新。
+窄范围更新包：`deliverables/deployment/competition-site-readiness-20261018.tar.gz`，使用 `docs/site-update-workbench.md` 中的 Workbench 命令。包内路径和 SHA-256 校验已通过。用户已在目标 ECS 执行更新：源码替换并备份，API 构建成功，前端构建因 Node 镜像源 502 中止，容器尚未完成切换。
+
+用户后续终端输出确认原 API、web 仍运行，API 健康；新 API 镜像可独立启动且导出文件哈希与更新包一致，web 回滚镜像已生成。旧恢复流程报缺失内容摘要，证据指向旧 API 镜像备份。新版恢复助手改用容器文件系统导出/导入，保留启动和健康检查元数据；25 项本地流程与元数据测试通过，均未连接真实 Docker。恢复小包为 `deliverables/deployment/competition-site-recovery-20261018.tar.gz`，仍待 Workbench 执行及公网验收。
 
 本机 SSH 仍返回 `Permission denied (publickey,password)`；用户使用 Workbench。待更新包在服务器应用后，继续核验公网新界面、五场景完整渲染耗时与全量导出。本次不替换任何全量数据库，也不混入本机模型配置或凭据。

@@ -7,7 +7,9 @@ import subprocess
 import pytest
 
 
-@pytest.mark.parametrize('mode', ['success', 'wrong-api-image', 'copy-failure', 'missing-api-tag'])
+@pytest.mark.parametrize('mode', ['success', 'wrong-api-image', 'copy-failure', 'missing-api-tag',
+                                  'snapshot-failure', 'api-run-failure', 'web-commit-failure',
+                                  'nginx-failure', 'final-preflight-failure', 'compose-failure'])
 def test_prebuilt_recovery_keeps_live_containers_until_images_are_ready(tmp_path, mode):
     bash = os.environ.get('BASH_EXECUTABLE') or shutil.which('bash') or shutil.which('sh')
     if not bash:
@@ -19,7 +21,18 @@ def test_prebuilt_recovery_keeps_live_containers_until_images_are_ready(tmp_path
 date() { printf '20261018T014242Z\n'; }
 sha256sum() { printf 'fixture-digest  %s\n' "$1"; }
 cut() { read -r digest rest; printf '%s\n' "$digest"; }
-python3() { printf 'preflight\n' >> calls.log; }
+site_preflights=0
+python3() {
+  if [ "$1" = scripts/snapshot_api_rootfs.py ]; then
+    printf 'snapshot-api-rootfs\n' >> calls.log
+    [ "$TEST_MODE" != snapshot-failure ] || return 1
+    printf 'procurement-site-api-rollback:container-d5b779260b8f\n'
+  else
+    printf 'preflight\n' >> calls.log
+    site_preflights=$((site_preflights + 1))
+    if [ "$TEST_MODE" = final-preflight-failure ] && [ "$site_preflights" = 2 ]; then return 1; fi
+  fi
+}
 docker() {
   printf '%s\n' "$*" >> calls.log
   case "$1" in
@@ -34,13 +47,20 @@ docker() {
       if [ "$TEST_MODE" = missing-api-tag ] && [ "$2:$3" = inspect:procurement-ecs-api:latest ]; then return 1; fi
       return 0 ;;
     run)
-      if [ "$TEST_MODE" = wrong-api-image ]; then printf 'wrong-digest\n'; else printf '%s\n' "$site_expected"; fi ;;
+      case "$*" in
+        *'--entrypoint nginx'*) [ "$TEST_MODE" != nginx-failure ] ;;
+        *)
+          [ "$TEST_MODE" != api-run-failure ] || return 1
+          if [ "$TEST_MODE" = wrong-api-image ]; then printf 'wrong-digest\n'; else printf '%s\n' "$site_expected"; fi ;;
+      esac ;;
     create)
       case "$*" in *sha256:*) return 72 ;; esac
       printf 'stopped-staging-container\n' ;;
     cp) [ "$TEST_MODE" != copy-failure ] ;;
-    commit) printf 'sha256:unresolvable-internal-id\n' ;;
-    compose) return 0 ;;
+    commit)
+      case "$2" in procurement-site-web-stage-*) [ "$TEST_MODE" != web-commit-failure ] || return 1 ;; esac
+      printf 'sha256:unresolvable-internal-id\n' ;;
+    compose) [ "$TEST_MODE" != compose-failure ] ;;
     rm) return 0 ;;
     *) echo 'Unexpected Docker operation' >&2; return 71 ;;
   esac
@@ -63,14 +83,27 @@ docker() {
         assert calls[-1].startswith('rm procurement-site-web-stage-')
         assert any(line.startswith('run --rm --pull never --network none --entrypoint python procurement-ecs-api:latest') for line in calls)
         assert any(line.startswith('commit procurement-ecs-web-1 ') for line in calls)
-        assert any(line.startswith('commit --change ') for line in calls)
+        assert calls.index('snapshot-api-rootfs') < next(i for i, line in enumerate(calls) if line.startswith('commit '))
+        assert not any(line.startswith('commit ') and 'procurement-ecs-api-1' in line for line in calls)
         assert any(line.startswith('commit procurement-site-web-stage-') and line.endswith('procurement-ecs-web:latest') for line in calls)
+        assert any('--entrypoint nginx procurement-ecs-web:latest -t' in line for line in calls)
+        assert 'container-d5b779260b8f' in result.stdout
+    elif mode == 'compose-failure':
+        assert result.returncode != 0
+        assert any(line.startswith('compose ') for line in calls)
+        assert 'service-switch' in result.stderr
+        assert 'Rollback images:' in result.stdout
+        assert 'Services switched using local images.' not in result.stdout
+        assert calls[-1].startswith('rm procurement-site-web-stage-')
     else:
         assert result.returncode != 0
         assert not any(line.startswith('compose ') for line in calls)
-        if mode in {'wrong-api-image', 'missing-api-tag'}:
+        if mode in {'wrong-api-image', 'missing-api-tag', 'snapshot-failure', 'api-run-failure'}:
             assert not any(line.startswith('create ') for line in calls)
             assert not any(line.startswith('commit ') for line in calls)
         else:
             assert calls[-1].startswith('rm procurement-site-web-stage-')
-            assert not any(line.startswith('commit procurement-site-web-stage-') for line in calls)
+            if mode == 'copy-failure':
+                assert not any(line.startswith('commit procurement-site-web-stage-') for line in calls)
+        if mode != 'wrong-api-image':
+            assert 'Site update stopped during ' in result.stderr
