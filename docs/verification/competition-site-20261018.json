@@ -1,0 +1,169 @@
+{
+  "scope": "Local production UI, full-result DB copy, fake application token; no model HTTP; not official accuracy or remote latency",
+  "official_score": false,
+  "checks": [
+    {
+      "name": "access screen precedes model settings and avoids unauthenticated model requests",
+      "passed": true
+    },
+    {
+      "name": "fresh login selects named full data and hides empty presets while retaining samples",
+      "passed": true
+    },
+    {
+      "name": "all seven field filters work on full data and numeric bounds are enforced",
+      "passed": true
+    },
+    {
+      "name": "five scenario results agree with independent SQL counts and shared package identities",
+      "passed": true
+    },
+    {
+      "name": "five queries include completed graph rendering in their displayed timings",
+      "passed": true
+    },
+    {
+      "name": "full-data workbook download retains the official schema and all three row counts",
+      "passed": true
+    },
+    {
+      "name": "switches and mobile access settings remain usable with full data",
+      "passed": true
+    }
+  ],
+  "timings": [
+    {
+      "scenario": "合作画像",
+      "full_render_ms": 648.9
+    },
+    {
+      "scenario": "投标活跃度",
+      "full_render_ms": 211.3
+    },
+    {
+      "scenario": "竞争关系",
+      "full_render_ms": 267.9
+    },
+    {
+      "scenario": "共同采购单位",
+      "full_render_ms": 212.3
+    },
+    {
+      "scenario": "共同竞标项目",
+      "full_render_ms": 237.4
+    }
+  ],
+  "source_sha256": "34966e033ba3163367760663365f56da9f69f2dc52052c96410b8491f8df45c3",
+  "consoleErrors": [],
+  "counts": {
+    "projects": 2236,
+    "notices": 1038,
+    "items": 21728,
+    "suppliers": 4208,
+    "purchasers": 766,
+    "total_amount": 3283952031.63,
+    "unknown_amount_count": 357,
+    "fallback_packages": 0,
+    "partial_packages": 531,
+    "avg_confidence": 0
+  },
+  "field_matches": {
+    "product_name": 2,
+    "category": 2,
+    "brand": 14,
+    "model": 1,
+    "unit_price": 2,
+    "quantity": 8098,
+    "total_price": 6
+  },
+  "relationship_checks": {
+    "partners": 4,
+    "top_bidders": 5,
+    "competitors": 215,
+    "common_purchasers": 1,
+    "common_projects": 26,
+    "scope": "Stored data consistency, not independent source accuracy"
+  },
+  "local_average_ms": 315.56,
+  "export_ms": 13072,
+  "workbook_acceptance": {
+    "valid": false,
+    "errors": [
+      "总表:356: duplicate announcement/package row",
+      "总表:357: duplicate announcement/package row",
+      "总表:358: duplicate announcement/package row",
+      "总表:359: duplicate announcement/package row",
+      "总表:570: duplicate announcement/package row",
+      "总表:571: duplicate announcement/package row",
+      "总表:628: duplicate announcement/package row",
+      "总表:629: duplicate announcement/package row",
+      "总表:630: duplicate announcement/package row",
+      "总表:631: duplicate announcement/package row",
+      "总表:632: duplicate announcement/package row",
+      "总表:633: duplicate announcement/package row",
+      "总表:634: duplicate announcement/package row",
+      "总表:1099: duplicate announcement/package row",
+      "总表:1100: duplicate announcement/package row",
+      "总表:1492: duplicate announcement/package row",
+      "总表:1493: duplicate announcement/package row",
+      "总表:1756: duplicate announcement/package row",
+      "总表:1757: duplicate announcement/package row",
+      "总表:1758: duplicate announcement/package row",
+      "总表:1759: duplicate announcement/package row",
+      "总表:1786: duplicate announcement/package row",
+      "总表:1787: duplicate announcement/package row",
+      "总表:1788: duplicate announcement/package row",
+      "总表:1789: duplicate announcement/package row",
+      "总表:1877: duplicate announcement/package row",
+      "总表:2086: duplicate announcement/package row",
+      "总表:2087: duplicate announcement/package row",
+      "总表:2202: duplicate announcement/package row",
+      "总表:2203: duplicate announcement/package row"
+    ],
+    "row_counts": {
+      "总表": 2236,
+      "标的表": 21728,
+      "投标人表": 6542
+    },
+    "required_blue_positions": 22,
+    "blank_cells": {
+      "总表": {
+        "URL": 0,
+        "UUID": 0,
+        "标段/合同包": 49,
+        "项目名称": 0,
+        "采购单位": 0,
+        "中标供应商": 203,
+        "中标金额": 357
+      },
+      "标的表": {
+        "UUID": 0,
+        "标段/合同包": 113,
+        "产品服务名称": 267,
+        "品目": 8748,
+        "品牌": 13627,
+        "规格型号": 12643,
+        "数量": 6554,
+        "单价": 11924,
+        "总价": 13164
+      },
+      "投标人表": {
+        "UUID": 0,
+        "标段/合同包": 116,
+        "名称": 0,
+        "类别": 0,
+        "通过审查": 1728,
+        "报价（万元）": 3992
+      }
+    },
+    "blank_policy": "Source omissions remain blank; a blue column does not authorize inventing a value.",
+    "scope": "Three-sheet structure, types, UUID/package links and rounding; semantic accuracy requires source labels.",
+    "schema_sha256": "a39a30dfdab545692b2f90a627ebcb8b60394627bcf99476a730862495f89e6a",
+    "workbook_sha256": "17e5c1f9e42f0faf4de2665a47ec68830387b88591d76d11307b5b896e5bfad1"
+  },
+  "submission_ready": false,
+  "export_bytes": 2124559,
+  "passed": true,
+  "finished": "2026-10-18T01:30:40.085Z",
+  "source_unchanged": true
+}

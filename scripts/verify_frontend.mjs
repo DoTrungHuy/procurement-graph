@@ -73,6 +73,9 @@ try {
     assert(label.includes(await panel.locator('.detail-title').innerText())); await page.keyboard.press('Escape')
   })
   await check('empty dataset has a usable import entry', async () => {
+    await page.getByRole('button', { name: '连接设置', exact: true }).click()
+    await page.getByRole('checkbox', { name: '显示空数据集', exact: true }).check()
+    await page.getByRole('button', { name: '关闭侧栏', exact: true }).click()
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official'); await page.getByRole('heading', { name: '这个数据集还没有项目', exact: true }).waitFor(); assert(await page.getByRole('button', { name: '前往数据接入', exact: true }).isVisible())
     await page.getByRole('combobox', { name: '当前数据集', exact: true }).selectOption('official-reference'); await page.getByRole('heading', { name: '采购项目 26', exact: true }).waitFor()
   })
@@ -255,7 +258,7 @@ try {
     }
   })
   await check('settings accessible and error recovery preserves data', async () => {
-    await page.getByRole('button', { name: '连接设置', exact: true }).click(); const panel = page.getByRole('dialog', { name: '连接设置', exact: true }); await panel.waitFor(); assert.match(await panel.innerText(), /模型调用已暂停/); await panel.getByRole('button', { name: '保存并连接', exact: true }).click(); await panel.waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: '连接设置', exact: true }).click(); const panel = page.getByRole('dialog', { name: '连接设置', exact: true }); await panel.waitFor(); await panel.getByRole('button', { name: '模型服务', exact: true }).click(); assert.match(await panel.innerText(), /模型调用已暂停/); await panel.getByRole('button', { name: '服务访问', exact: true }).click(); await panel.getByRole('button', { name: '保存并连接', exact: true }).click(); await panel.waitFor({ state: 'hidden' })
     await navigate('items', '标的检索'); let injected = false
     await page.route('**/api/items?**', async route => { if (!injected) { injected = true; return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"Verification: temporary search error"}' }) } return route.continue() })
     await page.getByRole('button', { name: '检索', exact: true }).click(); await page.getByRole('alert').filter({ hasText: 'temporary search error' }).waitFor(); report.expectedFailures.push('One injected local 503 search error'); await page.getByRole('button', { name: '重试', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.filter-form')?.parentElement.querySelector('[role=alert]')); assert(await page.locator('.items-table tbody tr').count() > 0)

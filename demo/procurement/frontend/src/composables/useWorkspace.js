@@ -1,6 +1,6 @@
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, reactive, watch } from 'vue'
 import { api, readToken, saveToken } from '../api'
-import { scenarios, scenarioExamples } from '../utils/presentation'
+import { scenarios, scenarioExamples, preferredDataset } from '../utils/presentation'
 
 const workspaceKey = Symbol('procurement-workspace')
 const stored = (key, fallback = '') => { try { return localStorage.getItem(key) || fallback } catch { return fallback } }
@@ -13,24 +13,25 @@ const pageFromHash = () => {
 }
 
 export function createWorkspace() {
-  const initialDataset = stored('procurement.dataset', 'official-reference')
+  const initialDataset = stored('procurement.dataset')
   const initialProjectSort = stored('procurement.projectSort', 'announcement_date')
   const w = reactive({
     page: pageFromHash(), dataset: /^[\p{L}\p{N}_-]{1,80}$/u.test(initialDataset) ? initialDataset : 'official-reference',
-    health: {}, datasets: [], samples: {}, stats: {}, purchasers: [], suppliers: [], brands: [], categories: [],
+    health: {}, datasets: [], samples: {}, stats: {}, purchasers: [], suppliers: [], brands: [], categories: [], authorized: false, showEmptyDatasets: false,
     booting: true, datasetLoading: false, connection: 'connecting', error: '', toast: '',
     settingsOpen: false, settingsBusy: false, accessToken: readToken(), exporting: false,
     projects: [], projectTotal: 0, projectPage: 1, projectPageSize: 10, projectSearch: '', projectPurchaser: '', projectLoading: false, projectError: '',
     projectSort: ['announcement_date', 'imported_at'].includes(initialProjectSort) ? initialProjectSort : 'announcement_date',
     items: [], itemTotal: 0, itemPage: 1, itemPageSize: 20, itemSearch: '', filters: emptyFilters(), itemApplied: {}, itemLoading: false, itemError: '',
     scenario: scenarios[0].id, purchaser: '', supplier: '', selectedSuppliers: [], result: null,
-    resultLoading: false, resultError: '', renderMs: null, resultParameters: null, networkOpen: false,
+    resultLoading: false, resultError: '', renderMs: null, renderState: '', resultParameters: null, networkOpen: false,
     evidence: null, projectPanelOpen: false, projectDetail: null, projectDetailLoading: false, projectDetailError: '', projectDetailTab: 'items',
     importMethod: 'upload', processingMode: 'parse-only', files: [], localLimit: 5, ingesting: false,
     job: null, jobHistory: [], jobDocuments: [], jobDocumentTotal: 0, jobDocumentPage: 1, jobProgressError: ''
   })
   let stopped = false, scopeSequence = 0, itemSequence = 0, projectSequence = 0, querySequence = 0
   let jobSequence = 0, documentSequence = 0, detailSequence = 0, pollTimer, toastTimer
+  let pendingRender = null
   const scope = () => ({ dataset_id: w.dataset })
   const fail = error => error instanceof Error ? error.message : String(error)
   const current = (sequence, dataset) => !stopped && sequence === scopeSequence && dataset === w.dataset
@@ -51,7 +52,7 @@ export function createWorkspace() {
     w.stats = {}; w.projects = []; w.projectTotal = 0; w.items = []; w.itemTotal = 0
     w.purchasers = []; w.suppliers = []; w.brands = []; w.categories = []
     w.projectPage = 1; w.projectSearch = ''; w.projectPurchaser = ''; w.itemPage = 1; w.itemSearch = ''
-    w.filters = emptyFilters(); w.itemApplied = {}; w.result = null; w.resultError = ''; w.renderMs = null
+    w.filters = emptyFilters(); w.itemApplied = {}; w.result = null; w.resultError = ''; w.renderMs = null; w.renderState = ''; pendingRender = null
     w.selectedSuppliers = []; w.purchaser = ''; w.supplier = ''; w.evidence = null
     w.projectPanelOpen = false; w.projectDetail = null; w.networkOpen = false
     w.job = null; w.jobHistory = []; w.jobDocuments = []; w.jobDocumentTotal = 0; w.jobDocumentPage = 1
@@ -88,18 +89,16 @@ export function createWorkspace() {
     try {
       w.health = await api.health(); w.connection = 'online'
       if (!w.health.model_network_enabled) w.processingMode = 'parse-only'
-      if (w.health.auth_required && !readToken()) { w.settingsOpen = true; return }
+      if (w.health.auth_required && !readToken()) { w.authorized = false; w.settingsOpen = true; return }
       const [datasets, samples] = await Promise.all([api.datasets(), api.samples()])
       if (stopped) return
-      w.datasets = datasets; w.samples = samples
-      if (!datasets.some(d => d.id === w.dataset)) {
-        w.dataset = datasets.find(d => d.id === 'official-reference')?.id || datasets[0]?.id || 'default'
-      }
+      w.datasets = datasets; w.samples = samples; w.authorized = true
+      w.dataset = preferredDataset(datasets, stored('procurement.dataset'))
       await loadDataset()
       const remembered = stored(`procurement.job.${w.dataset}`)
       const candidate = w.jobHistory.find(j => j.id === remembered) || w.jobHistory[0]
       if (candidate) watchJob(candidate.id)
-    } catch (error) { w.error = fail(error); if (!w.health.status) w.connection = 'offline' }
+    } catch (error) { w.error = fail(error); if (error.status === 401) { w.authorized = false; w.settingsOpen = true }; if (!w.health.status) w.connection = 'offline' }
     finally { if (!stopped) w.booting = false }
   }
   async function applyToken() {
@@ -164,16 +163,26 @@ export function createWorkspace() {
       : definition.kind === 'supplier' ? { supplier: w.supplier } : { suppliers: w.selectedSuppliers.join(',') }
     if ((definition.kind === 'multiple' && w.selectedSuppliers.length < 2) || Object.values(parameters).some(v => !v)) return
     const token = ++querySequence, sequence = scopeSequence, dataset = w.dataset, scenario = w.scenario
-    w.resultLoading = true; w.resultError = ''; w.result = null; w.renderMs = null
+    w.resultLoading = true; w.resultError = ''; w.result = null; w.renderMs = null; w.renderState = ''; pendingRender = null
     const started = performance.now()
     try {
       const data = await api.analytics(scenario, { dataset_id: dataset, ...parameters })
       if (token !== querySequence || !current(sequence, dataset)) return
       w.result = data; w.resultParameters = parameters
-      await nextTick(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-      if (token === querySequence && current(sequence, dataset)) w.renderMs = Math.round((performance.now() - started) * 10) / 10
+      pendingRender = { token, sequence, dataset, result: w.result, started }
+      w.renderState = 'rendering'
     } catch (error) { if (token === querySequence && current(sequence, dataset)) w.resultError = fail(error) }
     finally { if (token === querySequence && current(sequence, dataset)) w.resultLoading = false }
+  }
+  async function finishScenarioRender(result, failed = false) {
+    const pending = pendingRender
+    if (!pending || pending.result !== result || pending.token !== querySequence || !current(pending.sequence, pending.dataset)) return
+    if (failed) { pendingRender = null; w.renderState = 'error'; return }
+    // The network emits only after ECharts finishes. Include the DOM tables and the following paint.
+    await nextTick(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    if (pendingRender !== pending || pending.token !== querySequence || !current(pending.sequence, pending.dataset)) return
+    w.renderMs = Math.round((performance.now() - pending.started) * 10) / 10
+    w.renderState = 'complete'; pendingRender = null
   }
   async function loadJobDocuments(page = w.jobDocumentPage) {
     if (!w.job) return
@@ -260,7 +269,8 @@ export function createWorkspace() {
     const e = scenarioExamples[w.scenario]
     return e.purchaser ? w.purchasers.includes(e.purchaser) : e.supplier ? w.suppliers.includes(e.supplier) : e.suppliers.every(s => w.suppliers.includes(s))
   })
-  Object.assign(w, { navigate, initialize, loadDataset, applyToken, loadProjects, loadItems, clearFilters, openProject, closeProject,
+  const visibleDatasets = computed(() => w.datasets.filter(dataset => w.showEmptyDatasets || dataset.packages > 0 || dataset.id === w.dataset))
+  Object.assign(w, { visibleDatasets, navigate, initialize, loadDataset, applyToken, loadProjects, loadItems, clearFilters, openProject, closeProject, finishScenarioRender,
     useExample, runScenario, captureFiles, upload, importLocal, replaySamples, retryJob, watchJob, loadJobDocuments, download,
     jobActive, canQuery, canUseExample, scenarioDefinition: definition })
   watch(() => w.projectSort, value => {
@@ -275,8 +285,9 @@ export function createWorkspace() {
     if (value === w.dataset && job) watchJob(job.id)
   })
   watch(() => [w.scenario, w.purchaser, w.supplier, JSON.stringify(w.selectedSuppliers)], () => {
-    ++querySequence; w.resultLoading = false; w.result = null; w.resultError = ''; w.renderMs = null
+    ++querySequence; w.resultLoading = false; w.result = null; w.resultError = ''; w.renderMs = null; w.renderState = ''; pendingRender = null
   })
+  watch(() => w.page, value => { if (value !== 'relations' && pendingRender) { pendingRender = null; w.renderState = 'interrupted' } })
   const onHash = () => { w.page = pageFromHash(); window.scrollTo({ top: 0, behavior: 'instant' }) }
   onMounted(() => { window.addEventListener('hashchange', onHash); initialize() })
   onBeforeUnmount(() => { stopped = true; ++scopeSequence; stopPolling(); clearTimeout(toastTimer); window.removeEventListener('hashchange', onHash) })

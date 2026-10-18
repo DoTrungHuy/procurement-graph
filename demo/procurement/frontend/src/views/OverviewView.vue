@@ -24,7 +24,7 @@ function page(value) { w.projectPage = value; w.loadProjects(false) }
     <div class="stat-strip" aria-label="当前数据概况" :aria-busy="w.datasetLoading">
       <div><span>公告</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.notices) }}</strong></div>
       <div><span>采购包</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.projects) }}</strong></div>
-      <div><span>标的明细</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.items) }}</strong></div>
+      <div><span>标的来源记录</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.items) }}</strong></div>
       <div><span>投标主体</span><strong>{{ w.datasetLoading ? '—' : number(w.stats.suppliers) }}</strong></div>
       <div class="stat-amount"><span>已披露中标金额</span><strong>{{ w.datasetLoading ? '—' : money(w.stats.total_amount) }}</strong><small v-if="w.stats.unknown_amount_count">另有 {{ w.stats.unknown_amount_count }} 个采购包金额未披露</small></div>
     </div>

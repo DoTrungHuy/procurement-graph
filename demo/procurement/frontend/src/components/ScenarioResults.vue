@@ -40,17 +40,21 @@ async function locate(name) {
   detailTable.value?.querySelector('.highlighted-result')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
 }
 watch(() => [w.result, group.value], () => { highlighted.value = '' })
+watch(() => w.result, async result => {
+  await nextTick()
+  if (result && !rows.value.length) w.finishScenarioRender(result)
+}, { immediate: true })
 </script>
 
 <template>
-  <section class="surface scenario-results" data-testid="scenario-result" :data-scenario="w.scenario" :data-render-ms="w.renderMs" aria-label="关系查询结果">
+  <section class="surface scenario-results" data-testid="scenario-result" :data-scenario="w.scenario" :data-render-ms="w.renderMs" :data-render-state="w.renderState" aria-label="关系查询结果">
     <div class="result-overview-heading"><h2>查询结果 <span class="count">{{ number(rows.length) }}</span></h2><span>{{ w.scenarioDefinition.title }} · 当前数据集</span></div>
     <AnalysisSummary />
     <div v-if="groups.length" class="subtabs" aria-label="结果分组"><button v-for="(title, index) in groups" :key="title" :class="{ active: group === (index ? 'secondary' : 'primary') }" :aria-pressed="group === (index ? 'secondary' : 'primary')" @click="group = index ? 'secondary' : 'primary'">{{ title }}</button></div>
     <EmptyState v-if="!rows.length" title="暂未找到符合条件的关系" description="可更换查询主体，或补充当前数据集。"></EmptyState>
     <template v-else>
       <div class="analysis-visuals" :class="{ 'wide-comparison': ['common-purchasers', 'common-projects'].includes(w.scenario) }">
-        <RelationNetwork id="relationship-network" :result-group="group" />
+        <RelationNetwork id="relationship-network" :result-group="group" @ready="({ result, failed }) => w.finishScenarioRender(result, failed)" />
         <RelationshipCharts :rows="rows" :pair-mode="pairMode" :group="group" @select="locate" />
       </div>
       <div class="detail-table-heading"><h3>结果明细</h3><p>完整字段与来源核验，按页展示查询结果。</p></div>
@@ -58,6 +62,6 @@ watch(() => [w.result, group.value], () => { highlighted.value = '' })
       <div ref="detailTable" class="table-scroll"><table class="relation-table" :class="{ 'common-project-table': w.scenario === 'common-projects' }"><thead><tr><th v-for="col in columns" :key="col.key" :class="{ numeric: ['number', 'money'].includes(col.type) }">{{ col.title }}</th></tr></thead><tbody><tr v-for="(row, index) in paged" :key="row.id || `${page}-${index}`" :class="{ 'highlighted-result': highlighted === rowName(row) }"><td v-for="col in columns" :key="col.key" :class="{ numeric: ['number', 'money'].includes(col.type), 'entity-cell': col.type === 'text' }"><template v-if="col.type === 'money'">{{ money(row[col.key]) }}</template><template v-else-if="col.type === 'number'">{{ row[col.key] == null ? '未记录' : number(row[col.key]) }}</template><template v-else-if="col.type === 'project'"><button class="project-link" @click="w.openProject(row.id)">{{ row.name }}</button><span class="cell-note">{{ row.lot_name }}</span></template><template v-else-if="col.type === 'bids'"><BidSummary :results="row.results" /><button class="text-button" @click="w.openProject(row.id, 'bids')">查看竞标详情</button></template><details v-else-if="col.type === 'details'" class="supplier-details"><summary>查看 {{ row.supplier_details?.length || 0 }} 家供应商</summary><dl><div v-for="supplier in row.supplier_details" :key="supplier.supplier"><dt>{{ supplier.supplier }}</dt><dd>{{ supplier.cooperation_count }} 次 · {{ money(supplier.total_amount) }}</dd></div></dl></details><template v-else>{{ row[col.key] || '未披露' }}</template></td></tr></tbody></table></div>
       <PaginationBar :total="rows.length" :page="page" :page-size="15" label="关系结果" @change="page = $event"></PaginationBar>
     </template>
-    <div class="result-footnote"><span>按采购包统计；审查不通过者不计入有效共同竞标。金额未披露时保留缺失。</span><span v-if="w.renderMs != null" class="query-time">查询与明细显示 {{ number(w.renderMs) }} ms</span></div>
+    <div class="result-footnote"><span>按采购包统计；审查不通过者不计入有效共同竞标。金额未披露时保留缺失。</span><span v-if="w.renderMs != null" class="query-time">查询与完整渲染 {{ number(w.renderMs) }} ms</span><span v-else-if="w.renderState === 'rendering'" class="query-time">正在完成图表渲染…</span><span v-else-if="w.renderState === 'error'" class="query-time">图表未完成，本次不计时</span><span v-else-if="w.renderState === 'interrupted'" class="query-time">展示已中断，请重新查询计时</span></div>
   </section>
 </template>

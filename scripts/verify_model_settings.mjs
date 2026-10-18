@@ -19,6 +19,7 @@ async function start(name) {
   await page.goto(fixture.uiOrigin)
   await page.getByRole('button', { name: '连接设置', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '连接设置', exact: true })
+  await panel.getByRole('button', { name: '模型服务', exact: true }).click()
   await panel.getByRole('textbox', { name: '模型名称', exact: true }).waitFor()
   await page.waitForFunction(() => {
     const input = document.querySelector('input[aria-label="模型名称"]')
@@ -61,6 +62,7 @@ try {
     await page.reload()
     await page.getByRole('button', { name: '连接设置', exact: true }).click()
     panel = page.getByRole('dialog', { name: '连接设置', exact: true })
+    await panel.getByRole('button', { name: '模型服务', exact: true }).click()
     await page.waitForFunction(() => document.querySelector('input[aria-label="模型名称"]')?.value === 'fixture-model-a')
     assert.equal(await panel.getByLabel('模型API Key', { exact: true }).inputValue(), '')
     assert(!(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).includes(fakeKey))

@@ -13,7 +13,7 @@ const response = async (path, options = {}) => {
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`
     try { const body = await res.json(); detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail) } catch (_) {}
-    throw new Error(detail)
+    const error = new Error(detail); error.status = res.status; throw error
   }
   return res
 }

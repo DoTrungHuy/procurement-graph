@@ -103,6 +103,9 @@ try {
   })
   await check('overview preview rejects a delayed response from another dataset and recovers from failure', async () => {
     await page.setViewportSize({ width: 1440, height: 1000 }); await navigate('items')
+    await page.getByRole('button', { name: '连接设置', exact: true }).click()
+    await page.getByRole('checkbox', { name: '显示空数据集', exact: true }).check()
+    await page.getByRole('button', { name: '关闭侧栏', exact: true }).click()
     const entered = latch(), blocked = latch()
     await page.route('**/api/projects?**', async route => {
       if (new URL(route.request().url()).searchParams.get('page_size') !== '3') return route.continue()
@@ -125,6 +128,22 @@ try {
     await page.getByRole('button', { name: '重新加载概览', exact: true }).click()
     await page.locator('.map-node.project').first().waitFor()
     await page.unroute('**/api/projects?**')
+  })
+  await check('timing remains pending until the lazy graph module has finished rendering', async () => {
+    const entered = latch(), blocked = latch()
+    await page.route('**/src/graph.js', async route => { entered.release(); await blocked.promise; await route.continue() })
+    await page.reload(); await navigate('relations')
+    await page.getByRole('button', { name: '填入样本示例', exact: true }).click()
+    await page.getByRole('button', { name: '查询关系', exact: true }).click(); await entered.promise
+    const result = page.locator('[data-testid=scenario-result]'); await result.waitFor()
+    await wait(250)
+    assert.equal(await result.getAttribute('data-render-state'), 'rendering')
+    assert.equal(await result.getAttribute('data-render-ms'), null)
+    blocked.release()
+    await page.locator('[data-testid=scenario-result][data-render-state=complete]').waitFor()
+    assert(Number(await result.getAttribute('data-render-ms')) >= 250)
+    assert(await result.locator('canvas').isVisible())
+    await page.unroute('**/src/graph.js')
   })
   assert.deepEqual(report.consoleErrors, []); assert.deepEqual(report.blockedRequests, []); report.passed = true
 } catch (error) { report.passed = false; report.error = error.stack; console.error(error); await page.screenshot({ path: path.join(output, 'edgecase-failure.png') }).catch(() => {}) }

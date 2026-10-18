@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+from itertools import count
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -63,6 +64,8 @@ def workbook_bytes(records: list[ProjectExtract], notes: list[list] | None = Non
     workbook = Workbook()
     workbook.remove(workbook.active)
     sheets = {name:workbook.create_sheet(name) for name in HEADERS}
+    # Worksheet.max_row scans existing cells; asking it for every row makes full exports quadratic.
+    sequence = {name:count(1) for name in HEADERS}
     for name, headers in HEADERS.items():
         sheets[name].append(headers)
     details = list(notes or [['类型','公告UUID','状态','说明']])
@@ -76,7 +79,7 @@ def workbook_bytes(records: list[ProjectExtract], notes: list[list] | None = Non
             details.append(['空结果',record.notice_uuid,record.processing_status,record.no_target_reason])
         for lot in record.package_records():
             winners = list(dict.fromkeys(b.bidder for b in lot.bids if b.is_winner and b.eligible))
-            sheets['总表'].append([sheets['总表'].max_row,record.source_url or None,record.notice_uuid,
+            sheets['总表'].append([next(sequence['总表']),record.source_url or None,record.notice_uuid,
                 lot.lot_name or None,record.project_name or None,record.purchaser or None,'；'.join(winners) or None,
                 yuan_to_wan(lot.awarded_amount,2)])
             excluded = set()
@@ -92,7 +95,7 @@ def workbook_bytes(records: list[ProjectExtract], notes: list[list] | None = Non
                 if index in excluded:
                     continue
                 # Source category is optional and its official wording is ambiguous; leave blank.
-                sheets['标的表'].append([sheets['标的表'].max_row,record.notice_uuid,lot.lot_name or None,
+                sheets['标的表'].append([next(sequence['标的表']),record.notice_uuid,lot.lot_name or None,
                     item.product_name or None,item.category or None,item.brand or None,item.model or None,
                     item.quantity,yuan_to_wan(item.unit_price),yuan_to_wan(item.total_price),None])
                 if item.derived_values:
@@ -103,7 +106,7 @@ def workbook_bytes(records: list[ProjectExtract], notes: list[list] | None = Non
                 status = '未通过' if '未通过' in states else '通过' if disclosed_pass else None
                 if status == '未通过' and bid.review_reason:
                     status += '：'+bid.review_reason
-                sheets['投标人表'].append([sheets['投标人表'].max_row,record.notice_uuid,lot.lot_name or None,
+                sheets['投标人表'].append([next(sequence['投标人表']),record.notice_uuid,lot.lot_name or None,
                     bid.bidder,bid.role,status,yuan_to_wan(bid.bid_amount,2),
                     round(bid.score,2) if bid.score is not None else None,bid.non_winning_reason or None])
     output_sheets = list(sheets.items())

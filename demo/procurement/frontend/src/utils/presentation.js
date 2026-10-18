@@ -18,9 +18,19 @@ export const statusTone = value => ['failed', 'completed_with_errors'].includes(
   : ['processing', 'queued'].includes(value) ? 'active'
   : ['complete', 'completed', 'parsed', 'cached'].includes(value) ? 'success' : 'neutral'
 export const modeName = value => ({ 'parse-only': '解析预检', replay: '历史响应回放', extract: '模型抽取' }[value] || value)
-export const datasetName = id => ({
+export const datasetName = id => /^official-full-(\d{4})(\d{2})(\d{2})$/.test(id)
+  ? id.replace(/^official-full-(\d{4})(\d{2})(\d{2})$/, '官方全量数据（$1-$2-$3）') : ({
   'official-reference': '公告核验样本', official: '官方基准数据', default: '工作数据', demo: '合成演示数据'
 }[id] || id)
+export const sourceName = source => ({ announcement: '公告正文', attachment: '采购附件' }[source] || source || '来源未记录')
+export const preferredDataset = (datasets, remembered = '') => {
+  const populated = datasets.filter(dataset => dataset.packages > 0)
+  if (populated.some(dataset => dataset.id === remembered)) return remembered
+  return populated.filter(dataset => dataset.id.startsWith('official-full-')).sort((a, b) => b.id.localeCompare(a.id))[0]?.id
+    || populated.find(dataset => !['official-reference', 'demo'].includes(dataset.id))?.id
+    || populated.find(dataset => dataset.id === 'official-reference')?.id
+    || populated[0]?.id || datasets.find(dataset => dataset.id === 'default')?.id || datasets[0]?.id || 'default'
+}
 export const formatBytes = value => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB`
   : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(value / 1024))} KB`
 export const scenarios = [
