@@ -11,11 +11,13 @@ mkdir -p /tmp/competition-site-readiness-20261018
 tar -xzf /tmp/competition-site-readiness-20261018.tar.gz -C /tmp/competition-site-readiness-20261018
 cd /tmp/competition-site-readiness-20261018/competition-site-update
 python3 scripts/apply_site_update.py --validate-only
-python3 scripts/apply_site_update.py --root /opt/procurement-project
-python3 scripts/apply_site_update.py --root /opt/procurement-project --apply
+python3 scripts/apply_site_update.py --root /opt/procurement-project-next
+python3 scripts/apply_site_update.py --root /opt/procurement-project-next --apply
 ```
 
 前两条 Python 命令只做检查。最后一条在确认服务属于此目录、当前没有抽取任务后，备份待替换源码，更新代码并重建原 Compose 项目的 api/web 镜像。沿用现有 Compose 文件和私有 `.env`；不运行 `down`，不替换全量库或模型设置。若模型测试正在运行，应等待结束再更新。
+
+实际运行路径已由 2026-10-18 的容器标签确认：`procurement-ecs-api-1` 和 `procurement-ecs-web-1` 的 Compose 工作目录均为 `/opt/procurement-project-next/demo/procurement`。此前的 `/opt/procurement-project` 路径不适用于这套运行服务。以后应先核对容器标签，再指定 `--root`，不要根据旧目录名猜测。
 
 更新后在浏览器刷新并检查：
 

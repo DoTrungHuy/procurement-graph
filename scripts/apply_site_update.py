@@ -17,7 +17,7 @@ def command(*args: str, capture: bool = False, env=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=Path('/opt/procurement-project'))
+    parser.add_argument('--root', type=Path, help='Actual running project directory from the Docker Compose labels')
     parser.add_argument('--validate-only', action='store_true')
     parser.add_argument('--apply', action='store_true', help='Without this flag, inspect only')
     args = parser.parse_args()
@@ -34,17 +34,22 @@ def main():
     if args.validate_only:
         print(json.dumps({'valid': True, 'files': len(manifest['files']), 'contains_database_or_credentials': False}))
         return
+    if args.root is None:
+        parser.error('--root is required unless --validate-only is used; verify the running Compose directory first')
     root = args.root.resolve(strict=True)
     candidates = command('docker', 'ps', '-q', '--filter', 'label=com.docker.compose.service=api', capture=True).split()
     matches = []
+    observed = []
     for identifier in candidates:
         info = json.loads(command('docker', 'inspect', identifier, capture=True))[0]
         labels = info['Config']['Labels']
         directory = Path(labels.get('com.docker.compose.project.working_dir', '/')).resolve()
+        observed.append({'container':info.get('Name',identifier).lstrip('/'), 'working_directory':str(directory)})
         if directory in {root, root / 'demo/procurement'}:
             matches.append((identifier, labels))
     if len(matches) != 1:
-        raise RuntimeError('Cannot uniquely identify this project API container; no files changed')
+        raise RuntimeError('Cannot uniquely identify the API container for --root ' + str(root)
+                           + '; no files changed. Observed Compose directories: ' + json.dumps(observed))
     identifier, labels = matches[0]
     files = [Path(value).resolve() for value in labels['com.docker.compose.project.config_files'].split(',')]
     if not files or any(not value.is_relative_to(root) or not value.is_file() for value in files):
