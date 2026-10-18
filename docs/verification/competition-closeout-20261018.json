@@ -1,0 +1,158 @@
+{
+  "verified_at": "2026-10-18T12:33:45.846053+00:00",
+  "branch": "fix-package-identity",
+  "code_commit": "d49638716f1b9f55a1090d6f297eedc752f3a72e",
+  "application_version": "2.4.1",
+  "site": "https://dianzibei.trunghuy.top/",
+  "dataset": "official-full-20261018",
+  "closeout_completed": true,
+  "official_score": false,
+  "submission_ready": false,
+  "public_functional_checks_passed": true,
+  "counts": {
+    "notices": 1038,
+    "projects": 2214,
+    "items": 21599,
+    "suppliers": 4191,
+    "partial_packages": 800
+  },
+  "rows": {
+    "总表": 2214,
+    "标的表": 21599,
+    "投标人表": 6511
+  },
+  "tests": {
+    "scope": "Current workspace, including pre-existing unrelated parser/test changes; deployment archive excludes those changes",
+    "backend_passed": 536,
+    "backend_and_script_tests_passed": 551,
+    "skipped": 10,
+    "skip_reason": "Existing Bash-dependent checks skipped on Windows",
+    "warnings": 46,
+    "frontend_build": "passed; existing ECharts chunk-size warning",
+    "nginx_config": "nginx -t passed on production container",
+    "local_ui_checks": 8
+  },
+  "source_checks": {
+    "passed": true,
+    "package_notices": 10,
+    "package_assignments": 40,
+    "source_proofs": 32,
+    "money_fields": 13,
+    "missing_rows": 28
+  },
+  "timings": {
+    "local_average_ms": 313.56,
+    "public_average_ms": 1978.02,
+    "public_scenarios": [
+      {
+        "full_render_ms": 2783.5,
+        "scenario": "合作画像"
+      },
+      {
+        "full_render_ms": 2323.2,
+        "scenario": "投标活跃度"
+      },
+      {
+        "full_render_ms": 1788.8,
+        "scenario": "竞争关系"
+      },
+      {
+        "full_render_ms": 1021.8,
+        "scenario": "共同采购单位"
+      },
+      {
+        "full_render_ms": 1972.8,
+        "scenario": "共同竞标项目"
+      }
+    ],
+    "subsecond_public_average_passed": false,
+    "scope": "Frontend request through complete chart rendering; one selected example per scenario, not official platform scoring"
+  },
+  "model_smoke": {
+    "scope": "One public announcement body, without attachments; real API upload, configured production model and export smoke; not accuracy scoring",
+    "official_score": false,
+    "job_id": "14b49053674843d1a6a4e99c3e0cf504",
+    "dataset": "closeout-smoke-20261018-c96bb12",
+    "source_filename": "t20260812_27123559.html",
+    "source_sha256": "d06126374c4f2f29b9f49e76644e3d1c5e47e9a675f0c74e01a1b3b7158ffe7c",
+    "source_bytes": 32575,
+    "accepted_status": 202,
+    "status": "completed_with_warnings",
+    "succeeded": 1,
+    "failed": 0,
+    "elapsed_seconds": 3.6457,
+    "warning_count": 7,
+    "metrics": {
+      "model_calls": 1,
+      "token_usage": {
+        "prompt_tokens": 4051,
+        "completion_tokens": 1028,
+        "total_tokens": 5079
+      },
+      "cache_only": false,
+      "response_cache_hits": 0,
+      "document_cache_hits": 0,
+      "requested_model": "deepseek-flash",
+      "pipeline_version": "package-v2.15",
+      "parser_version": "parse-v3.7"
+    },
+    "row_counts": [
+      1,
+      1,
+      5
+    ],
+    "public_export_http_status": 200,
+    "workbook_structure_valid": true,
+    "cleanup": {
+      "test_dataset_and_job_removed": true,
+      "test_upload_workdir_removed": true,
+      "original_project_counts_unchanged": true,
+      "active_jobs": 0
+    },
+    "limitation": "No attachments uploaded; one item is an attachment placeholder with undisclosed detail fields. Warnings retained as evidence; not full seven-field accuracy.",
+    "warning_summaries": [
+      "未明确划分合同包，包名保留空值",
+      "主要标的详见未上传附件，品牌型号和数值留空",
+      "专家信息在摘要与正文之间冲突，按正文记录并提示",
+      "未披露投标人资格及符合性结论，不推断通过",
+      "一条评审分值的摘要与正文存在精度冲突，按正文记录",
+      "采购联系方式在摘要与正文间不同，不影响主体抽取",
+      "原HTML无canonical链接，URL按栏目与UUID重建"
+    ]
+  },
+  "model_metadata": {
+    "model_metadata_missing_fields": [
+      "model_id",
+      "version",
+      "parameter_scale",
+      "resource_origin"
+    ],
+    "model_resource_evidence_present": false,
+    "institution_model_policy_present": false
+  },
+  "remaining": {
+    "empty_package_labels": 8,
+    "audited_source_problems": 24,
+    "partial_notices": 350,
+    "partial_packages": 800,
+    "pending_amount_items": 4036,
+    "independent_official_accuracy": "not evaluated",
+    "decision": "Retain source uncertainty and stop further data patching in this closeout; do not invent missing fields"
+  },
+  "delivery": {
+    "archive": "deliverables/deployment/competition-closeout-20261018-r2.tar.gz",
+    "sha256": "d041bb8c9960258448d42cee7a26f85de49b0ffa31a8cfb0d3105e9b53e1f171",
+    "bytes": 12984221,
+    "source_commit": "d49638716f1b9f55a1090d6f297eedc752f3a72e",
+    "database_sha256": "d483d318b17f8c333d7840d673d190c154e4a3acb71dcfea6f814bb4c7a31bf0",
+    "secrets_included": false
+  },
+  "database_hashes": {
+    "results/competition-platform-20261018/platform.db": "34966e033ba3163367760663365f56da9f69f2dc52052c96410b8491f8df45c3",
+    "results/package-identity-20261018/repaired/platform.db": "f4bd978b9f7d778f82c66fd68ff880de1bfd5b7fe8c564d574325adb51df23da",
+    "results/result-quality-20261018/platform.db": "e34ad394397e5b4057ef3ef9f4e574d378d6fc5edac50ceff758bf625a20c9fc",
+    "results/competition-closeout-20261018/platform.db": "68005e639f87fcfa0c67ad8df817359c70a45b14e34a9679a3e26622ad51f402"
+  },
+  "artifacts": "results/competition-closeout-20261018/",
+  "scope": "Source repairs, supplier identity guard, date-free label, protected dataset import, public deployment and bounded end-to-end smoke; not a declaration of formal competition completion"
+}
