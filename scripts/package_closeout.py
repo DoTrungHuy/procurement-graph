@@ -7,11 +7,16 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import tarfile
+import time
+import argparse
 
 ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output',type=Path,default=ROOT/'deliverables/deployment/competition-closeout-20261018.tar.gz')
+    args=parser.parse_args()
     database=ROOT/'results/competition-closeout-20261018/platform.db'
     temporary=ROOT/'.cache/closeout/delivery.db';temporary.parent.mkdir(parents=True,exist_ok=True)
     if temporary.exists():raise ValueError('Delivery staging database already exists')
@@ -37,11 +42,12 @@ def main():
               'scope':'Reviewed code plus one verified dataset; no credentials, model settings, jobs, uploads or extraction caches',
               'files':{name:hashlib.sha256(data).hexdigest() for name,data in files.items()},
               'verified_database_sha256':hashlib.sha256(temporary.read_bytes()).hexdigest()}
-    output=ROOT/'deliverables/deployment/competition-closeout-20261018.tar.gz';output.parent.mkdir(parents=True,exist_ok=True)
+    output=args.output;output.parent.mkdir(parents=True,exist_ok=True)
     if output.exists():raise ValueError('Closeout archive already exists')
     with tarfile.open(output,'w:gz') as archive:
         def add(name,data):
             entry=tarfile.TarInfo('competition-closeout/'+name);entry.size=len(data);entry.mode=0o644
+            entry.mtime=int(time.time())
             archive.addfile(entry,io.BytesIO(data))
         for name,data in files.items():add('payload/'+name,data)
         add('site-update-manifest.json',json.dumps(manifest,ensure_ascii=False,indent=2).encode())
