@@ -27,6 +27,8 @@ python3 scripts/apply_site_update.py --root /opt/procurement-project-next --appl
 
 旧更新包若没有此恢复脚本，可将仓库 `scripts/finish_site_update.sh` 的内容直接粘贴到 Workbench 执行；无需重新上传业务数据。该恢复方式以“API 构建已成功”为前提，API 文件哈希不符时会停止。本地检查只覆盖脚本语法和模拟 Docker 的流程，目标 ECS 仍需执行后检查。
 
+恢复脚本使用 Compose 构建产物的 `procurement-ecs-api:latest` / `procurement-ecs-web:latest` 标签，不使用旧运行容器的 `Config.Image` 作为新镜像标签。后者可能是已经失去镜像记录的旧摘要。旧前端直接从运行容器保存为回滚镜像；旧 API 摘要若不存在，也从运行容器保存，并清空回滚镜像中的三项凭据环境变量，实际配置仍由原 `.env` 和挂载目录提供。为避免多行粘贴丢失换行，可将 `finish_site_update.sh` 单独上传至 `/tmp/` 后执行 `bash /tmp/finish_site_update.sh`。
+
 更新后在浏览器刷新并检查：
 
 - 首次访问默认选择最新有数据的全量集；已选择的其他非空数据集仍会保留。
