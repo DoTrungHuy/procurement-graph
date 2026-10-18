@@ -176,7 +176,8 @@ class BidExtract(ExtractionModel):
 
     @property
     def eligible(self) -> bool:
-        if not self.identity_confirmed:
+        from .bid_identity import non_company_name_reason
+        if not self.identity_confirmed or non_company_name_reason(self.bidder):
             return False
         states = (self.review_status, self.qualification_status, self.compliance_status)
         if "未通过" in states:
@@ -185,7 +186,8 @@ class BidExtract(ExtractionModel):
 
     @property
     def role(self) -> str:
-        if not self.identity_confirmed:
+        from .bid_identity import non_company_name_reason
+        if not self.identity_confirmed or non_company_name_reason(self.bidder):
             return '其他'
         if "未通过" in (self.review_status, self.qualification_status, self.compliance_status):
             return "其他"

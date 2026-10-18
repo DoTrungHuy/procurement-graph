@@ -25,7 +25,7 @@ from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 from .model_transport import read_model_response
 
-PIPELINE_VERSION = 'package-v2.14'
+PIPELINE_VERSION = 'package-v2.15'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 
@@ -545,10 +545,17 @@ def merge_results(results: list[ProjectExtract]) -> ProjectExtract:
 
 
 def validate_result(result: ProjectExtract) -> None:
+    from .bid_identity import non_company_name_reason
     result.collect_numeric_warnings()
     result.purchaser = normalize_org(result.purchaser)
     for lot in result.assign_lot_keys():
         lot.lot_name = lot.lot_name.strip()
+        for bid in lot.bids:
+            reason = non_company_name_reason(bid.bidder)
+            if reason:
+                bid.identity_confirmed = False
+                bid.is_winner = False
+                result.warnings.append(f'投标主体“{bid.bidder}”：{reason}，保留来源记录，不计入企业名录及有效关系')
         winners = {normalize_org(b.bidder) for b in lot.bids if b.is_winner and b.eligible}
         for bid in lot.bids:
             bid.bidder = normalize_org(bid.bidder)

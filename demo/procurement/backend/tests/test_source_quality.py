@@ -11,6 +11,7 @@ from app.extractor import merge_results, validate_result
 from app.models import BidExtract, ItemExtract, LotExtract, ProjectExtract
 from app.source_facts import money, read_notice_facts, reconcile_notice_facts
 from app.bid_identity import verify_bid_identities
+from app.bid_identity import non_company_name_reason
 
 NOTICE = '''三、采购结果
 合同包1(设备):
@@ -213,3 +214,33 @@ def test_explicit_descriptive_package_name_is_not_replaced_by_unassigned():
     result=record();result.lots[0].lot_name=''
     reconcile_notice_facts(result,'标段名称：视频图像实战应用平台\n三、中标信息','notice.html')
     assert result.lots[0].lot_name=='视频图像实战应用平台'
+
+
+@pytest.mark.parametrize('name', ['XXXX','{供应商名称}','（投标人名称）','GC-HGX260212-20260604OVJPY'])
+def test_non_company_names_are_retained_without_enterprise_identity(name):
+    result=record();result.lots[0].bids.append(BidExtract(bidder=name,is_winner=True))
+    validate_result(result)
+    invalid=result.lots[0].bids[-1]
+    assert non_company_name_reason(name) and not invalid.identity_confirmed
+    assert not invalid.is_winner and not invalid.eligible and invalid.role=='其他'
+    assert invalid.bidder==name.replace('（','(').replace('）',')')  # Source record stays auditable.
+
+
+@pytest.mark.parametrize('name', ['XX科技有限公司','Xilinx, Inc.','GC医药股份有限公司','供应商甲'])
+def test_unusual_real_names_are_not_rejected_by_suffix_or_latin_letters(name):
+    assert not non_company_name_reason(name)
+    assert BidExtract(bidder=name,is_winner=True).eligible
+
+
+def test_legacy_template_names_cannot_reenter_picker_counts_or_relations(client):
+    result=record()
+    invalid=['XXXX','{供应商名称}','GC-HGX260212-20260604OVJPY']
+    result.lots[0].bids += [BidExtract(bidder=name,is_winner=True) for name in invalid]
+    upsert_notice(result,['n.html'])
+    # An old database may predate identity flags. Read APIs must still protect it.
+    with connect() as connection:
+        connection.execute('UPDATE bids SET identity_confirmed=1,eligible=1,is_winner=1')
+    assert client.get('/api/entities',params={'type':'supplier'}).json()==['甲公司']
+    assert client.get('/api/stats').json()['suppliers']==1
+    assert [row['supplier'] for row in analytics.purchaser_partners('买方')['winning_suppliers']]==['甲公司']
+    assert not any(node['name'] in invalid for node in analytics.relationship_overview()['nodes'])

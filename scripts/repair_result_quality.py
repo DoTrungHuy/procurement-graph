@@ -32,12 +32,15 @@ def basename(label):
 
 
 def reasons(record):
+    from app.bid_identity import non_company_name_reason
     groups = []
     if any(re.search(r'字段冲突: (?:awarded_amount|bid_amount)', w) for w in record.warnings): groups.append('money_conflict')
     if any('跨文件同品目同名' in w for w in record.warnings): groups.append('cross_file')
     if any(not lot.lot_name for lot in record.lots): groups.append('unknown_package')
     if any(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/-]{5,}',bid.bidder) for lot in record.lots for bid in lot.bids):
         groups.append('anonymous_bid_identity')
+    if any(non_company_name_reason(bid.bidder) and bid.identity_confirmed for lot in record.lots for bid in lot.bids):
+        groups.append('non_company_name')
     labels = {obj.source_file for lot in record.lots for obj in [*lot.items,*lot.bids]}
     if any(re.search(r'声明|劳务|报酬|业绩|本国-|中企业|中小企', label) for label in labels): groups.append('supporting_source')
     return groups
@@ -51,6 +54,7 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--resume',action='store_true',help='Resume a verified local repair, keeping its original source hash')
     parser.add_argument('--recheck-notices',nargs='*',default=[])
+    parser.add_argument('--only-notices',nargs='+',help='Limit a new repair to explicitly selected notice UUIDs')
     args = parser.parse_args()
     source, output = args.database.resolve(), args.output.resolve()
     if (output.exists() and not args.resume) or source.is_relative_to(output):
@@ -67,7 +71,7 @@ def main():
     os.environ['DATABASE_PATH'] = str(output/'platform.db')
     from app import database
     from app.acceptance import check_workbook
-    from app.bid_identity import verify_bid_identities
+    from app.bid_identity import non_company_name_reason, verify_bid_identities
     from app.document_policy import document_role
     from app.evidence import ground_evidence
     from app.exports import workbook_bytes
@@ -86,6 +90,9 @@ def main():
         before = dict(original.execute('SELECT notice_uuid,result_json FROM notices WHERE dataset_id=?',(args.dataset,)))
     selected = [(uid, ProjectExtract.model_validate_json(raw)) for uid,raw in before.items()]
     selected = [(uid,record) for uid,record in selected if reasons(record)]
+    if args.only_notices:
+        if not set(args.only_notices) <= set(before):raise ValueError('复核清单包含未知公告')
+        selected=[(uid,record) for uid,record in selected if uid in args.only_notices]
     actions, counts, changed, quarantined = [], Counter(), [], []
     output_audit = output/'notice-audit.jsonl'
     if args.resume:
@@ -185,6 +192,12 @@ def main():
                         if info:
                             items = [item for item in lot.items if item.source_file==label]
                             ground_evidence(ProjectExtract(lots=[LotExtract(lot_name=lot.lot_name,items=items)]),info['text'])
+                for lot in record.lots:
+                    for bid in lot.bids:
+                        reason = non_company_name_reason(bid.bidder)
+                        if reason and bid.identity_confirmed:
+                            audit['changes'].append({'action':'non_company_name','bidder':bid.bidder,
+                                                     'source_file':bid.source_file,'evidence':bid.evidence,'reason':reason})
                 validate_result(record)
                 if audit['source_errors']:
                     record.processing_status='partial'

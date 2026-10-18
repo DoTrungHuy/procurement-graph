@@ -19,7 +19,7 @@ export const statusTone = value => ['failed', 'completed_with_errors'].includes(
   : ['complete', 'completed', 'parsed', 'cached'].includes(value) ? 'success' : 'neutral'
 export const modeName = value => ({ 'parse-only': '解析预检', replay: '历史响应回放', extract: '模型抽取' }[value] || value)
 export const datasetName = id => /^official-full-(\d{4})(\d{2})(\d{2})$/.test(id)
-  ? id.replace(/^official-full-(\d{4})(\d{2})(\d{2})$/, '官方全量数据（$1-$2-$3）') : ({
+  ? '官方全量数据' : ({
   'official-reference': '公告核验样本', official: '官方基准数据', default: '工作数据', demo: '合成演示数据'
 }[id] || id)
 export const sourceName = source => ({ announcement: '公告正文', attachment: '采购附件' }[source] || source || '来源未记录')

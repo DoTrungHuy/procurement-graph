@@ -6,18 +6,23 @@ from itertools import combinations
 
 from .database import rows
 from .normalization import normalize_org
+from .bid_identity import non_company_name_reason
 
 
 def _data(dataset_id: str, include_items: bool=False):
     from .config import settings
     if settings.relation_backend == 'neo4j':
         from .graph_store import read_dataset
-        return read_dataset(dataset_id, include_items)
-    if settings.relation_backend != 'sqlite':
+        packages,bids,items = read_dataset(dataset_id, include_items)
+    elif settings.relation_backend != 'sqlite':
         raise ValueError('RELATION_BACKEND must be sqlite or neo4j')
-    packages = {p['id']:p for p in rows("SELECT * FROM projects WHERE dataset_id=? AND processing_status<>'fallback'",(dataset_id,))}
-    bids = rows("SELECT b.* FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND p.processing_status<>'fallback'",(dataset_id,))
-    items = rows("SELECT i.* FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=? AND p.processing_status<>'fallback'",(dataset_id,)) if include_items else []
+    else:
+        packages = {p['id']:p for p in rows("SELECT * FROM projects WHERE dataset_id=? AND processing_status<>'fallback'",(dataset_id,))}
+        bids = rows("SELECT b.* FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND p.processing_status<>'fallback'",(dataset_id,))
+        items = rows("SELECT i.* FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=? AND p.processing_status<>'fallback'",(dataset_id,)) if include_items else []
+    for bid in bids:
+        if not bid.get('identity_confirmed',1) or non_company_name_reason(bid['bidder']):
+            bid['eligible'],bid['is_winner'] = 0,0
     return packages,bids,items
 
 
@@ -212,6 +217,8 @@ def relationship_overview(dataset_id: str='default') -> dict:
         key = 'purchaser:' + row['name']
         nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'purchaser'})
     for row in rows("SELECT DISTINCT b.bidder name FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.bidder<>'' AND b.identity_confirmed=1", (dataset_id,)):
+        if non_company_name_reason(row['name']):
+            continue
         key = 'supplier:' + row['name']
         nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'supplier'})
     graph['nodes'] = list(nodes.values())

@@ -25,7 +25,8 @@ def main():
     manifest = json.loads((package / 'site-update-manifest.json').read_text('utf-8'))
     for name, digest in manifest['files'].items():
         relative = Path(name)
-        allowed = name.startswith('demo/procurement/frontend/') or name == 'demo/procurement/backend/app/exports.py'
+        allowed = name.startswith('demo/procurement/frontend/') or (
+            name.startswith('demo/procurement/backend/app/') and name.endswith('.py'))
         if not allowed or relative.is_absolute() or '..' in relative.parts:
             raise RuntimeError('Unexpected payload path')
         source = package / 'payload' / relative

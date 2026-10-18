@@ -151,7 +151,7 @@ def datasets():
 
 @app.get('/api/stats')
 def stats(dataset_id: str=Depends(dataset)):
-    return one("""SELECT COUNT(*) projects,COUNT(DISTINCT notice_uuid) notices,
+    result = one("""SELECT COUNT(*) projects,COUNT(DISTINCT notice_uuid) notices,
         (SELECT COUNT(*) FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=?) items,
         (SELECT COUNT(DISTINCT bidder) FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.identity_confirmed=1) suppliers,
         COUNT(DISTINCT NULLIF(purchaser,'')) purchasers,ROUND(SUM(awarded_amount),2) total_amount,
@@ -159,6 +159,8 @@ def stats(dataset_id: str=Depends(dataset)):
         SUM(processing_status='fallback') fallback_packages,SUM(processing_status='partial') partial_packages,
         (SELECT ROUND(AVG(confidence)*100,1) FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=?) avg_confidence
         FROM projects WHERE dataset_id=?""",(dataset_id,)*4)
+    result['suppliers'] = len(entities(type='supplier',dataset_id=dataset_id))
+    return result
 
 
 @app.post('/api/ingest',status_code=202)
@@ -360,7 +362,11 @@ def entities(type: str=Query(pattern='^(purchaser|supplier|brand|category)$'),da
                'brand':('items i JOIN projects p ON p.id=i.project_id','i.brand'),'category':('items i JOIN projects p ON p.id=i.project_id','i.category')}
     table,column = columns[type]
     identity = ' AND b.identity_confirmed=1' if type=='supplier' else ''
-    return [r['value'] for r in rows(f"SELECT DISTINCT {column} value FROM {table} WHERE p.dataset_id=? AND {column}<>''{identity} ORDER BY value",(dataset_id,))]
+    values = [r['value'] for r in rows(f"SELECT DISTINCT {column} value FROM {table} WHERE p.dataset_id=? AND {column}<>''{identity} ORDER BY value",(dataset_id,))]
+    if type=='supplier':
+        from .bid_identity import non_company_name_reason
+        values = [name for name in values if not non_company_name_reason(name)]
+    return values
 
 
 @app.get('/api/analytics/purchaser-partners')

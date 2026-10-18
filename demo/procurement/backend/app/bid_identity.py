@@ -2,6 +2,21 @@
 from __future__ import annotations
 
 import re
+from .normalization import normalize_org
+
+
+def non_company_name_reason(name: str) -> str:
+    """Reject explicit placeholders and known anonymous IDs, not unfamiliar company names."""
+    value = normalize_org(name)
+    label = value.strip('{}[]()【】<>《》')
+    if not value or re.fullmatch(r'[xX×*＿_]{2,}', label) or label in {
+        '供应商名称','投标人名称','投标单位名称','供应商全称','投标人全称',
+        '请填写供应商名称','请填写投标人名称',
+    }:
+        return '未填写的供应商模板占位文本'
+    if re.fullmatch(r'GC-[A-Z]{3}\d{6}-\d{8}[A-Z0-9]{4,}', value, re.I):
+        return '匿名投标编号，未披露企业名称'
+    return ''
 
 
 def verify_bid_identities(bids, text: str) -> list[dict]:

@@ -9,10 +9,12 @@ import { startBrowserFixture } from './browser_fixture.mjs'
 
 const { chromium } = createRequire(import.meta.url)('playwright')
 const root = process.cwd(), source = path.resolve(process.argv[2] || 'results/competition-platform-20261018/platform.db')
-const runtime = path.join(root, 'results/competition-site', new Date().toISOString().replace(/[:.]/g, '-'))
+const runtime = process.argv[3] ? path.resolve(process.argv[3]) : path.join(root, 'results/competition-site', new Date().toISOString().replace(/[:.]/g, '-'))
 const token = 'isolated-competition-site-token', dataset = 'official-full-20261018'
 const digest = async file => createHash('sha256').update(await fs.readFile(file)).digest('hex')
 const sourceHash = await digest(source)
+const countCode = "import sqlite3,json,sys;c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True);d='official-full-20261018';print(json.dumps([c.execute('SELECT COUNT(*) FROM projects WHERE dataset_id=?',(d,)).fetchone()[0],c.execute('SELECT COUNT(*) FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=?',(d,)).fetchone()[0],c.execute('SELECT COUNT(*) FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=?',(d,)).fetchone()[0]]));c.close()"
+const rowCounts = JSON.parse(execFileSync(path.join(root,'demo/procurement/.venv/Scripts/python.exe'),['-X','utf8','-c',countCode,source],{encoding:'utf8'}))
 const report = { scope: 'Local production UI, full-result DB copy, fake application token; no model HTTP; not official accuracy or remote latency', official_score: false, checks: [], timings: [], source_sha256: sourceHash, consoleErrors: [] }
 const fixture = await startBrowserFixture({ runtime, databaseSource: source, production: true, apiPort: 8019, webPort: 5189, apiToken: token })
 let browser, page
@@ -29,7 +31,7 @@ async function login(target) {
   await panel.getByLabel('服务访问令牌', { exact: true }).fill(token)
   await panel.getByRole('button', { name: '保存并连接', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
-  await target.getByRole('heading', { name: '采购项目 2236', exact: true }).waitFor()
+  await target.getByRole('heading', { name: `采购项目 ${rowCounts[0]}`, exact: true }).waitFor()
 }
 const oracleCode = String.raw`
 import sqlite3,json,sys
@@ -46,7 +48,7 @@ common_projects=rows('SELECT p.id'+base+'AND p.lot_name<>\'\' AND b.bidder IN (?
 print(json.dumps(dict(partners=partners,bidders=bidders,competitors=competitors,common_buyers=common_buyers,common_projects=common_projects)))
 `
 try {
-  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) })
+  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : { channel: 'msedge' }) })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true })
   page = await context.newPage(); page.on('pageerror', error => report.consoleErrors.push(error.message))
   await check('access screen precedes model settings and avoids unauthenticated model requests', async () => {
@@ -62,10 +64,27 @@ try {
   await check('fresh login selects named full data and hides empty presets while retaining samples', async () => {
     const select = page.getByRole('combobox', { name: '当前数据集', exact: true })
     assert.equal(await select.inputValue(), dataset)
-    assert.match(await select.locator('option:checked').innerText(), /官方全量数据/)
+    assert.equal(await select.locator('option:checked').innerText(), '官方全量数据')
     assert.deepEqual(await select.locator('option').evaluateAll(options => options.map(option => option.value).sort()), [dataset, 'official-reference'].sort())
-    const stats = await get('stats'); assert.equal(stats.notices, 1038); assert.equal(stats.projects, 2236); assert.equal(stats.items, 21728)
+    const stats = await get('stats'); assert.equal(stats.notices, 1038); assert.equal(stats.projects, rowCounts[0]); assert.equal(stats.items, rowCounts[1])
     report.counts = stats
+  })
+  await check('supplier picker excludes anonymous codes and unfilled templates while allowing a real selection', async () => {
+    const names = await get('entities', { type: 'supplier' })
+    assert(!names.some(name => /^GC-[A-Z]{3}\d{6}-\d{8}/i.test(name) || ['XXXX','{供应商名称}'].includes(name)))
+    await page.getByRole('link', { name: '关系分析', exact: true }).click()
+    await page.getByRole('button', { name: '共同采购单位', exact: true }).click()
+    await page.getByRole('button', { name: '选择至少两家供应商', exact: true }).click()
+    const search = page.getByRole('searchbox', { name: '搜索供应商', exact: true })
+    for (const invalid of ['XXXX','{供应商名称}','GC-HGX260212-20260604OVJPY']) {
+      await search.fill(invalid)
+      assert.equal(await page.locator('.picker-options .checkbox-option').count(),0)
+    }
+    await search.fill('中国移动通信集团广东有限公司')
+    await page.locator('.picker-options').getByRole('checkbox', { name: '中国移动通信集团广东有限公司', exact: true }).check()
+    await page.getByRole('button', { name: '完成选择', exact: true }).click()
+    assert.equal(await page.getByRole('button', { name: '移除中国移动通信集团广东有限公司', exact: true }).count(),1)
+    await page.screenshot({path:path.join(runtime,'supplier-picker-fixed.png')})
   })
   await check('all seven field filters work on full data and numeric bounds are enforced', async () => {
     const sample = (await get('items', { q: '遥测心电监护系统', brand: '迈瑞' })).data[0]
@@ -127,10 +146,12 @@ try {
     const target = path.join(runtime, 'procurement-tables.xlsx'); await file.saveAs(target)
     report.export_ms = Math.round(performance.now() - started)
     const code = "import sys,json;from openpyxl import load_workbook;w=load_workbook(sys.argv[1],read_only=True);print(json.dumps([s.max_row-1 for s in w]));w.close()"
-    assert.deepEqual(JSON.parse(execFileSync(fixture.python, ['-c', code, target], { encoding: 'utf8' })), [2236, 21728, 6542])
+    assert.deepEqual(JSON.parse(execFileSync(fixture.python, ['-c', code, target], { encoding: 'utf8' })), rowCounts)
     const validation = "import sys,json;from pathlib import Path;sys.path.insert(0,sys.argv[2]+'/demo/procurement/backend');from app.acceptance import check_workbook;print(json.dumps(check_workbook(Path(sys.argv[1]).read_bytes(),Path(sys.argv[2]+'/data/official-benchmark/indexes/output-schema.json'))))"
     report.workbook_acceptance = JSON.parse(execFileSync(fixture.python, ['-c', validation, target, root], { encoding: 'utf8' }))
-    report.submission_ready = report.workbook_acceptance.valid
+    assert(report.workbook_acceptance.valid)
+    report.workbook_structure_valid = true
+    report.submission_ready = false // Structure and UI checks do not certify model policy, source accuracy or public deployment.
     report.export_bytes = (await fs.stat(target)).size
   })
   await check('switches and mobile access settings remain usable with full data', async () => {
@@ -151,6 +172,7 @@ try {
   await page?.screenshot({ path: path.join(runtime, 'failure.png') }).catch(() => {})
 } finally {
   await browser?.close(); await fixture.stop()
+  for (const name of ['ui-verification.db','ui-verification.db-wal','ui-verification.db-shm']) await fs.unlink(path.join(runtime,name)).catch(error=>{if(error.code!=='ENOENT')throw error})
   report.finished = new Date().toISOString(); report.source_unchanged = await digest(source) === sourceHash
   await fs.writeFile(path.join(runtime, 'verification.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify({ passed: report.passed, checks: report.checks.length, runtime: path.relative(root, runtime) }))
