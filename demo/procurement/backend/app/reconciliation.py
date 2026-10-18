@@ -59,4 +59,21 @@ def reconcile_items(lot: LotExtract) -> tuple[int, bool]:
                 matched.related_sources.append(reference)
         combined += 1
     lot.items = retained
+    # Unproven cross-file identity is not permission to add both source prices.
+    # Keep the source rows and amounts exportable while withholding a business
+    # total for the affected brand until their relation is verified.
+    for item in retained:
+        item.aggregation_eligible, item.aggregation_reason = True, ''
+    for index, item in enumerate(retained):
+        for other in retained[:index]:
+            if not item.source_file or not other.source_file or item.source_file == other.source_file:
+                continue
+            if not item.product_name or not item.supplier:
+                continue
+            if (normalize_org(item.supplier), dedupe_key(item.product_name)) != (normalize_org(other.supplier), dedupe_key(other.product_name)):
+                continue
+            uncertain = True
+            for pending in (item, other):
+                pending.aggregation_eligible = False
+                pending.aggregation_reason = '同包跨来源同名标的关系未确认，原文金额保留，业务合计待核验'
     return combined, uncertain

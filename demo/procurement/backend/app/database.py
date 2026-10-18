@@ -64,11 +64,13 @@ ADDITIONS = {
   'evaluation_scores': "TEXT NOT NULL DEFAULT '[]'",
   'compliance_status': "TEXT NOT NULL DEFAULT '未披露'", 'eligible': 'INTEGER NOT NULL DEFAULT 0',
   'review_reason': "TEXT NOT NULL DEFAULT ''", 'non_winning_reason': "TEXT NOT NULL DEFAULT ''",
-  'consortium_id': "TEXT NOT NULL DEFAULT ''", 'source_file': "TEXT NOT NULL DEFAULT ''"},
+  'consortium_id': "TEXT NOT NULL DEFAULT ''", 'source_file': "TEXT NOT NULL DEFAULT ''",
+  'related_sources': "TEXT NOT NULL DEFAULT '[]'", 'identity_confirmed':'INTEGER NOT NULL DEFAULT 1'},
  'items': {'line_id': "TEXT NOT NULL DEFAULT ''", 'source_file': "TEXT NOT NULL DEFAULT ''",
   'source_location': "TEXT NOT NULL DEFAULT ''", 'quantity_unit': "TEXT NOT NULL DEFAULT ''",
   'derived_values': "TEXT NOT NULL DEFAULT '{}'", 'business_line_id': "TEXT NOT NULL DEFAULT ''",
   'related_sources': "TEXT NOT NULL DEFAULT '[]'",
+  'aggregation_eligible': 'INTEGER NOT NULL DEFAULT 1', 'aggregation_reason': "TEXT NOT NULL DEFAULT ''",
    'model_key': "TEXT NOT NULL DEFAULT ''"},
 }
 
@@ -147,7 +149,7 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_items_project ON items(project_id);
         CREATE INDEX IF NOT EXISTS idx_items_search ON items(product_name,category,brand);
         CREATE INDEX IF NOT EXISTS idx_items_model_key ON items(model_key);
-        PRAGMA user_version=4;
+        PRAGMA user_version=5;
         """)
         for row in c.execute('SELECT id, model, model_key FROM items').fetchall():
             key = model_match_key(row['model'])
@@ -193,18 +195,18 @@ def upsert_notice(result: ProjectExtract, source_files: list[str], dataset_id: s
                 project_id = int(cursor.lastrowid)
             ids.append(project_id)
             c.executemany("""INSERT INTO bids(project_id,bidder,is_winner,bid_amount,score,rank,evidence,review_status,
-                qualification_status,compliance_status,eligible,review_reason,non_winning_reason,consortium_id,source_file,evaluation_scores)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", [
+                qualification_status,compliance_status,eligible,review_reason,non_winning_reason,consortium_id,source_file,evaluation_scores,related_sources,identity_confirmed)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", [
                 (project_id,b.bidder,int(b.is_winner),b.bid_amount,b.score,b.rank,b.evidence,b.review_status,
-                 b.qualification_status,b.compliance_status,int(b.eligible),b.review_reason,b.non_winning_reason,b.consortium_id,b.source_file,json.dumps(b.evaluation_scores))
+                  b.qualification_status,b.compliance_status,int(b.eligible),b.review_reason,b.non_winning_reason,b.consortium_id,b.source_file,json.dumps(b.evaluation_scores),json.dumps(b.related_sources,ensure_ascii=False),int(b.identity_confirmed))
                 for b in lot.bids if b.bidder])
             c.executemany("""INSERT INTO items(project_id,winner_supplier,product_name,category,brand,model,model_key,unit_price,
-                quantity,total_price,source,evidence,confidence,line_id,source_file,source_location,quantity_unit,derived_values,business_line_id,related_sources)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", [
+                quantity,total_price,source,evidence,confidence,line_id,source_file,source_location,quantity_unit,derived_values,business_line_id,related_sources,aggregation_eligible,aggregation_reason)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", [
                 (project_id,i.supplier,i.product_name,i.category,i.brand,i.model,i.model_key,i.unit_price,i.quantity,i.total_price,
                  i.source,i.evidence,i.confidence,i.line_id,i.source_file,i.source_location,i.quantity_unit,
                  json.dumps(i.derived_values,ensure_ascii=False),i.business_line_id,
-                 json.dumps(i.related_sources,ensure_ascii=False)) for i in lot.items])
+                  json.dumps(i.related_sources,ensure_ascii=False),int(i.aggregation_eligible),i.aggregation_reason) for i in lot.items])
         c.execute("""INSERT INTO notices(dataset_id,notice_uuid,input_hash,result_json) VALUES(?,?,?,?)
             ON CONFLICT(dataset_id,notice_uuid) DO UPDATE SET input_hash=excluded.input_hash,
             result_json=excluded.result_json,updated_at=CURRENT_TIMESTAMP""",

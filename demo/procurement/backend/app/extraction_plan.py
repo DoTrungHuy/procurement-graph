@@ -52,6 +52,11 @@ def _ground(result, doc, announcement):
         for bid in lot.bids:
             bid.source_file = doc['label']
     ground_evidence(result, doc['text'])
+    from .bid_identity import verify_bid_identities
+    identity_checks = [verify_bid_identities(lot.bids, doc['text']) for lot in result.package_records()]
+    if any(identity_checks):
+        result.processing_status = 'partial'
+        result.warnings.append('得分表仅披露匿名投标编号，企业身份未确认，不作为新增真实企业参与关系统计')
     if doc['source'] == 'attachment' and announcement is not None:
         align_attachment_packages(result, announcement, doc['path'].name, doc['text'])
 
@@ -323,6 +328,11 @@ async def extract_documents(model, files: list[Path], usage) -> ProjectExtract:
     result = original.merge_results(results)
     from .package_identity import resolve_package_labels
     resolve_package_labels(result, package_sources)
+    from .source_facts import reconcile_notice_facts
+    if files and files[0].suffix.lower() in {'.html', '.htm'} and names[0] in package_sources:
+        audit = reconcile_notice_facts(result, package_sources[names[0]], names[0])
+        if usage is not None:
+            usage['source_verification'] = audit
     result.warnings.extend(errors)
     result.processing_status = 'partial' if errors or result.processing_status == 'partial' else 'complete'
     original.validate_result(result)

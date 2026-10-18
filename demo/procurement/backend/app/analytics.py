@@ -82,7 +82,10 @@ def purchaser_partners(purchaser: str, dataset_id: str='default') -> dict:
         if item['project_id'] in selected and item['brand']:
             brands[item['brand']].append(item)
     products = [{'supplier':name,'cooperation_count':len({i['project_id'] for i in records}),
-                 'item_count':len(records),'total_amount':_sum(i['total_price'] for i in records),
+                 'item_count':len(records),
+                 'total_amount':None if any(not i.get('aggregation_eligible',1) for i in records) else _sum(i['total_price'] for i in records),
+                 'unconfirmed_amount_item_count':sum(not i.get('aggregation_eligible',1) for i in records),
+                 'amount_status':'pending_review' if any(not i.get('aggregation_eligible',1) for i in records) else 'disclosed',
                  'unknown_amount_count':sum(i['total_price'] is None for i in records)} for name,records in brands.items()]
     products.sort(key=lambda x:(-x['cooperation_count'],-(x['total_amount'] or 0),x['supplier']))
     return {'purchaser':purchaser,'winning_suppliers':suppliers,'product_suppliers':products,
@@ -208,7 +211,7 @@ def relationship_overview(dataset_id: str='default') -> dict:
     for row in rows("SELECT DISTINCT purchaser name FROM projects WHERE dataset_id=? AND purchaser<>''", (dataset_id,)):
         key = 'purchaser:' + row['name']
         nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'purchaser'})
-    for row in rows("SELECT DISTINCT b.bidder name FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.bidder<>''", (dataset_id,)):
+    for row in rows("SELECT DISTINCT b.bidder name FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.bidder<>'' AND b.identity_confirmed=1", (dataset_id,)):
         key = 'supplier:' + row['name']
         nodes.setdefault(key, {'id': key, 'name': row['name'], 'type': 'supplier'})
     graph['nodes'] = list(nodes.values())

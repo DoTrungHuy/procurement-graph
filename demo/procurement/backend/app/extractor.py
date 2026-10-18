@@ -25,7 +25,7 @@ from .prompts import system_prompt, user_prompt
 from .model_settings import current_settings
 from .model_transport import read_model_response
 
-PIPELINE_VERSION = 'package-v2.13'
+PIPELINE_VERSION = 'package-v2.14'
 _usage: ContextVar[dict | None] = ContextVar('extraction_usage', default=None)
 _replay_context: ContextVar[dict | None] = ContextVar('replay_context', default=None)
 
@@ -396,6 +396,11 @@ class DeepSeekExtractor:
                             for bid in lot.bids:
                                 bid.source_file = names[index]
                         ground_evidence(result, text)
+                        from .bid_identity import verify_bid_identities
+                        identity_checks = [verify_bid_identities(lot.bids, text) for lot in result.package_records()]
+                        if any(identity_checks):
+                            result.processing_status = 'partial'
+                            result.warnings.append('得分表仅披露匿名投标编号，企业身份未确认，不作为新增真实企业参与关系统计')
                         if source == 'attachment' and announcement_result is not None:
                             align_attachment_packages(result,announcement_result,path.name,text)
                         results.append(result)
@@ -422,6 +427,11 @@ class DeepSeekExtractor:
         result = merge_results(results)
         from .package_identity import resolve_package_labels
         resolve_package_labels(result, package_sources)
+        from .source_facts import reconcile_notice_facts
+        if files and files[0].suffix.lower() in {'.html', '.htm'} and names[0] in package_sources:
+            audit = reconcile_notice_facts(result, package_sources[names[0]], names[0])
+            if _usage.get() is not None:
+                _usage.get()['source_verification'] = audit
         result.warnings.extend(errors)
         result.processing_status = 'partial' if errors or result.processing_status == 'partial' else 'complete'
         validate_result(result)
@@ -435,6 +445,17 @@ def _fill(target, source, fields: list[str], warnings: list[str], label: str) ->
         if field == 'model_key':
             continue
         old, new = getattr(target,field), getattr(source,field)
+        if field in {'awarded_amount', 'bid_amount'}:
+            candidates = list(dict.fromkeys([*target.field_conflicts.get(field, []),
+                                             *source.field_conflicts.get(field, [])]))
+            if candidates or (old is not None and new is not None and old != new):
+                candidates = list(dict.fromkeys([*candidates, *[v for v in (old, new) if v is not None]]))
+                target.field_conflicts[field] = candidates
+                setattr(target, field, None)
+                warning = f'{label}字段冲突: {field}，候选值已保留，未确认金额置空待原文核验'
+                if warning not in warnings:
+                    warnings.append(warning)
+                continue
         if missing(old) and not missing(new):
             setattr(target,field,new)
         elif not missing(old) and not missing(new) and old != new:
@@ -496,8 +517,15 @@ def merge_results(results: list[ProjectExtract]) -> ProjectExtract:
                 key = (lot.lot_key,bid.bidder,bid.consortium_id)
                 if key in bids:
                     current = bids[key]
-                    _fill(current,bid,['bid_amount','score','rank','evidence','source_file','review_reason','non_winning_reason','evaluation_scores'],merged.warnings,'投标')
-                    current.is_winner = current.is_winner or bid.is_winner
+                    references = [*current.related_sources, {'source_file':bid.source_file,'evidence':bid.evidence}, *bid.related_sources]
+                    for reference in references:
+                        if any(reference.values()) and reference != {'source_file':current.source_file,'evidence':current.evidence} and reference not in current.related_sources:
+                            current.related_sources.append(reference)
+                    if not current.evidence and bid.evidence:
+                        current.evidence, current.source_file = bid.evidence, bid.source_file
+                    _fill(current,bid,['bid_amount','score','rank','review_reason','non_winning_reason','evaluation_scores'],merged.warnings,'投标')
+                    current.identity_confirmed = current.identity_confirmed and bid.identity_confirmed
+                    current.is_winner = (current.is_winner or bid.is_winner) and current.identity_confirmed
                     for field in ['review_status','qualification_status','compliance_status']:
                         if getattr(bid,field) == '未通过' or getattr(current,field) == '未披露':
                             setattr(current,field,getattr(bid,field))

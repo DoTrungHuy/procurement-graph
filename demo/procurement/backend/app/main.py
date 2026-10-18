@@ -153,7 +153,7 @@ def datasets():
 def stats(dataset_id: str=Depends(dataset)):
     return one("""SELECT COUNT(*) projects,COUNT(DISTINCT notice_uuid) notices,
         (SELECT COUNT(*) FROM items i JOIN projects p ON p.id=i.project_id WHERE p.dataset_id=?) items,
-        (SELECT COUNT(DISTINCT bidder) FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=?) suppliers,
+        (SELECT COUNT(DISTINCT bidder) FROM bids b JOIN projects p ON p.id=b.project_id WHERE p.dataset_id=? AND b.identity_confirmed=1) suppliers,
         COUNT(DISTINCT NULLIF(purchaser,'')) purchasers,ROUND(SUM(awarded_amount),2) total_amount,
         SUM(awarded_amount IS NULL) unknown_amount_count,
         SUM(processing_status='fallback') fallback_packages,SUM(processing_status='partial') partial_packages,
@@ -359,7 +359,8 @@ def entities(type: str=Query(pattern='^(purchaser|supplier|brand|category)$'),da
     columns = {'purchaser':('projects p','p.purchaser'),'supplier':('bids b JOIN projects p ON p.id=b.project_id','b.bidder'),
                'brand':('items i JOIN projects p ON p.id=i.project_id','i.brand'),'category':('items i JOIN projects p ON p.id=i.project_id','i.category')}
     table,column = columns[type]
-    return [r['value'] for r in rows(f"SELECT DISTINCT {column} value FROM {table} WHERE p.dataset_id=? AND {column}<>'' ORDER BY value",(dataset_id,))]
+    identity = ' AND b.identity_confirmed=1' if type=='supplier' else ''
+    return [r['value'] for r in rows(f"SELECT DISTINCT {column} value FROM {table} WHERE p.dataset_id=? AND {column}<>''{identity} ORDER BY value",(dataset_id,))]
 
 
 @app.get('/api/analytics/purchaser-partners')

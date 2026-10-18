@@ -51,8 +51,10 @@ def export_records(dataset_id: str, job_id: str | None = None) -> tuple[list[Pro
             warnings=['历史记录缺少公告快照；请复核原文']))
         lot = LotExtract(lot_name=p['lot_name'],lot_key=p.get('lot_key',''),budget_amount=p['budget_amount'],awarded_amount=p['awarded_amount'])
         for i in rows('SELECT * FROM items WHERE project_id=? ORDER BY id',(p['id'],)):
-            lot.items.append(ItemExtract(**{**i,'supplier':i['winner_supplier'],'derived_values':json.loads(i['derived_values'])}))
-        lot.bids = [BidExtract.model_validate({**b, 'evaluation_scores': json.loads(b.get('evaluation_scores') or '[]')}) for b in rows('SELECT * FROM bids WHERE project_id=? ORDER BY id',(p['id'],))]
+            lot.items.append(ItemExtract(**{**i,'supplier':i['winner_supplier'],'derived_values':json.loads(i['derived_values']),
+                                           'related_sources':json.loads(i.get('related_sources') or '[]')}))
+        lot.bids = [BidExtract.model_validate({**b, 'evaluation_scores': json.loads(b.get('evaluation_scores') or '[]'),
+                    'related_sources': json.loads(b.get('related_sources') or '[]')}) for b in rows('SELECT * FROM bids WHERE project_id=? ORDER BY id',(p['id'],))]
         result.lots.append(lot)
     return records+list(legacy.values()), notes
 

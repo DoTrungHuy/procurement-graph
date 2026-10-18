@@ -9,6 +9,7 @@ const w = useWorkspace(), element = ref(null), limit = ref(8), loading = ref(fal
 const moreMenu = ref(null), helpMenu = ref(null)
 let chart, observer, token = 0, disposed = false
 const colors = { purchaser: '#5b62c9', project: '#8c86af', supplier: '#358d80', brand: '#aa8752' }
+function fittedLabelWidth(nodes) { return Math.max(40, Math.min(155, (element.value.clientWidth * .75 - 40) / Math.max(1, ...nodes.map(node => node.level)) - 60)) }
 async function draw() {
   const sequence = ++token, dataset = w.dataset, result = w.result
   let reported = false
@@ -30,14 +31,21 @@ async function draw() {
     if (empty.value) { ready(); return }
     if (!element.value.clientWidth || !element.value.clientHeight) return
     const levels = [0, 1, 2].map(level => data.nodes.filter(node => node.level === level))
+    const labelWidth = fittedLabelWidth(data.nodes)
     chart = engine.init(element.value, null, { renderer: 'canvas' })
     chart.on('finished', () => ready())
-    chart.setOption({ animation: false, tooltip: { renderMode: 'richText', confine: true, backgroundColor: '#fff', borderColor: '#e3e7f0', textStyle: { color: '#263a56', fontSize: 12 }, formatter: params => params.dataType === 'edge' ? params.data.relation : `${params.data.name}\n${params.data.focus ? '当前查询主体' : { purchaser: '采购单位', project: '采购包', supplier: '供应商', brand: '产品品牌' }[params.data.type]}` }, series: [{ type: 'graph', layout: 'none', top: 70, bottom: 20, roam: true, draggable: true, scaleLimit: { min: .35, max: 3 }, data: levels.flatMap((nodes, level) => nodes.map((node, index) => ({ ...node, x: level * 340 + 70, y: nodes.length === 1 ? 180 : index * (360 / Math.max(1, nodes.length - 1)), symbol: node.type === 'project' ? 'roundRect' : 'circle', symbolSize: node.focus ? 38 : node.type === 'project' ? 24 : 20, itemStyle: { color: colors[node.type], borderColor: node.focus ? '#d4d4f6' : '#fff', borderWidth: node.focus ? 7 : 3 }, label: { show: node.focus || data.nodes.length <= 18, color: '#405371', fontSize: 11, position: 'right', width: 155, overflow: 'truncate', backgroundColor: '#ffffffdd', padding: [3, 5], borderRadius: 4 } }))), links: data.links.map(link => ({ ...link, lineStyle: { color: link.relation.includes('中标') ? '#60a99a' : '#a2acc9', type: link.relation.startsWith('投标') || link.relation.startsWith('参与投标') || link.relation.startsWith('共同竞标') || link.relation.startsWith('共同投标') ? 'dashed' : 'solid', width: 1.5, opacity: .7, curveness: .08 } })), emphasis: { focus: 'adjacency', label: { show: true, width: 240, overflow: 'break', color: '#182a45' }, lineStyle: { width: 3, opacity: 1 } }, blur: { itemStyle: { opacity: .18 }, lineStyle: { opacity: .08 }, label: { opacity: .2 } } }] })
+    // Bound both dimensions: a horizontal pair must fit rather than scale to the full height.
+    chart.setOption({ animation: false, tooltip: { renderMode: 'richText', confine: true, backgroundColor: '#fff', borderColor: '#e3e7f0', textStyle: { color: '#263a56', fontSize: 12 }, formatter: params => params.dataType === 'edge' ? params.data.relation : `${params.data.name}\n${params.data.focus ? '当前查询主体' : { purchaser: '采购单位', project: '采购包', supplier: '供应商', brand: '产品品牌' }[params.data.type]}` }, series: [{ type: 'graph', layout: 'none', preserveAspect: 'contain', label: { width: labelWidth }, left: 40, right: '25%', top: 70, bottom: 20, roam: true, draggable: true, scaleLimit: { min: .35, max: 3 }, data: levels.flatMap((nodes, level) => nodes.map((node, index) => ({ ...node, x: level * 340 + 70, y: nodes.length === 1 ? 180 : index * (360 / Math.max(1, nodes.length - 1)), symbol: node.type === 'project' ? 'roundRect' : 'circle', symbolSize: node.focus ? 38 : node.type === 'project' ? 24 : 20, itemStyle: { color: colors[node.type], borderColor: node.focus ? '#d4d4f6' : '#fff', borderWidth: node.focus ? 7 : 3 }, label: { show: node.focus || data.nodes.length <= 18, color: '#405371', fontSize: 11, position: 'right', overflow: 'truncate', backgroundColor: '#ffffffdd', padding: [3, 5], borderRadius: 4 } }))), links: data.links.map(link => ({ ...link, lineStyle: { color: link.relation.includes('中标') ? '#60a99a' : '#a2acc9', type: link.relation.startsWith('投标') || link.relation.startsWith('参与投标') || link.relation.startsWith('共同竞标') || link.relation.startsWith('共同投标') ? 'dashed' : 'solid', width: 1.5, opacity: .7, curveness: .08 } })), emphasis: { focus: 'adjacency', label: { show: true, width: 240, overflow: 'break', color: '#182a45' }, lineStyle: { width: 3, opacity: 1 } }, blur: { itemStyle: { opacity: .18 }, lineStyle: { opacity: .08 }, label: { opacity: .2 } } }] })
     chart.on('click', params => { if (params.dataType === 'node' && params.data.type === 'project') { const id = params.data.projectId ?? Number(String(params.data.id).replace('project:', '')); if (Number.isFinite(id)) w.openProject(id) } })
     chart.resize()
   } catch (cause) { if (sequence === token && !disposed) { error.value = cause.message; loading.value = false; ready(true) } }
 }
-function resize() { if (!disposed && chart && !chart.isDisposed() && element.value?.clientWidth > 0 && element.value?.clientHeight > 0) chart.resize() }
+function resize() {
+  if (!disposed && chart && !chart.isDisposed() && element.value?.clientWidth > 0 && element.value?.clientHeight > 0) {
+    chart.resize()
+    chart.setOption({ series: [{ label: { width: fittedLabelWidth(chart.getOption().series[0]?.data || []) } }] })
+  }
+}
 function fit() { chart?.setOption({ series: [{ center: ['50%', '50%'], zoom: 1 }] }); resize() }
 async function toggleExpanded() { expanded.value = !expanded.value; await nextTick(); resize() }
 function closeMenus() { if (moreMenu.value) moreMenu.value.open = false; if (helpMenu.value) helpMenu.value.open = false }

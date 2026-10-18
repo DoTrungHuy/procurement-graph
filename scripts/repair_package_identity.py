@@ -60,6 +60,7 @@ def main():
         with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as original:
             with closing(sqlite3.connect(database_path)) as target:
                 original.backup(target)
+        database.init_db()
         before_snapshots, audits = [], []
         before_all = {row['notice_uuid']: row['result_json'] for row in database.rows(
             'SELECT notice_uuid,result_json FROM notices WHERE dataset_id=?', (args.dataset,))}

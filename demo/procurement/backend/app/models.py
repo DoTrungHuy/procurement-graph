@@ -8,6 +8,7 @@ from .normalization import disclosed_text, has_parallel_numbers, lot_identity, m
 
 
 class ExtractionModel(BaseModel):
+    field_conflicts: dict[str, list[Any]] = Field(default_factory=dict)
     _normalization_warnings: list[str] = PrivateAttr(default_factory=list)
     _numeric_fields: ClassVar[dict[str, str]] = {}
     _numeric_subject: ClassVar[tuple[str, str]] = ('记录', '')
@@ -68,6 +69,8 @@ class ItemExtract(ExtractionModel):
     business_line_id: str = ""  # Source business code; never a unique row key by itself.
     related_sources: list[dict[str, str]] = Field(default_factory=list)
     source_context: dict[str, str] = Field(default_factory=dict)
+    aggregation_eligible: bool = True
+    aggregation_reason: str = ""
     # Filled from verified source cells, never accepted as model proof.
     field_observations: dict[str, dict[str, str]] = Field(default_factory=dict)
 
@@ -120,6 +123,8 @@ class BidExtract(ExtractionModel):
     non_winning_reason: str = ""
     consortium_id: str = ""
     source_file: str = ""
+    related_sources: list[dict[str, str]] = Field(default_factory=list)
+    identity_confirmed: bool = True
     evaluation_scores: list[float | dict[str, Any]] = Field(default_factory=list)
 
     @field_validator('evaluation_scores', mode='before')
@@ -171,6 +176,8 @@ class BidExtract(ExtractionModel):
 
     @property
     def eligible(self) -> bool:
+        if not self.identity_confirmed:
+            return False
         states = (self.review_status, self.qualification_status, self.compliance_status)
         if "未通过" in states:
             return False
@@ -178,6 +185,8 @@ class BidExtract(ExtractionModel):
 
     @property
     def role(self) -> str:
+        if not self.identity_confirmed:
+            return '其他'
         if "未通过" in (self.review_status, self.qualification_status, self.compliance_status):
             return "其他"
         return "中标人" if self.is_winner else "参与人"
@@ -226,6 +235,8 @@ class ProjectExtract(ExtractionModel):
                    *(item for lot in self.lots for item in lot.items),
                    *(bid for lot in self.lots for bid in lot.bids)]
         warnings = [warning for record in records for warning in record._normalization_warnings]
+        if any(record.field_conflicts for record in records):
+            warnings.append('存在未确认的金额候选值，相关金额留空并保留原文供核验')
         if warnings:
             self.warnings = list(dict.fromkeys([*self.warnings, *warnings]))
             if self.processing_status == 'complete':
